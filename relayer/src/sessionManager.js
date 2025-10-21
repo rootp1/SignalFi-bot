@@ -1,9 +1,9 @@
 import { createAppSessionMessage } from '@erc7824/nitrolite'
 import clearnode from './clearNode.js'
-import config from './config.js'
 import { createRelayerSigner } from './utils/signer.js'
 
-const userSessions = new Map();
+const userSessions = new Map()
+const pendingStateUpdates = new Map()
 
 export async function openChannelForUser(userAddress, depositAmount) {
   console.log(`📡 Opening state channel for ${userAddress}...`)
@@ -55,7 +55,6 @@ const allocations = [
 export function getSession(userAddress) {
   return userSessions.get(userAddress.toLowerCase())
 }
-
 export function updateSession(userAddress, updates) {
   const session = userSessions.get(userAddress.toLowerCase())
   if (session) {
@@ -70,5 +69,35 @@ clearnode.onMessage('session_created', (message) => {
       status: 'active',
       sessionId: message.sessionId 
     })
+  }
+})
+export async function proposeStateUpdate(userAddress, update) {
+  const session = getSession(userAddress)
+  if (!session) throw new Error('No active session')
+  const relayerSigner = await createRelayerSigner()
+  const relayerSignature = await relayerSigner.messageSigner(
+    JSON.stringify(update)
+  )
+  const updateId = `${userAddress}-${Date.now()}`
+  pendingStateUpdates.set(updateId, {
+    update,
+    relayerSignature,
+    userSignature: null,
+    status: 'pending'
+  })
+  const stateMessage = await createStateUpdateMessage(
+    relayerSigner.messageSigner,
+    update
+  )
+  clearnode.send(stateMessage)
+  return updateId
+}
+clearnode.onMessage('state_signed', (message) => {
+  const { updateId, signature, signer } = message
+ const pending = pendingStateUpdates.get(updateId)
+  if (pending) {
+    pending.userSignature = signature
+    pending.status = 'signed'
+    console.log('✅ State update fully signed:', updateId)
   }
 })
