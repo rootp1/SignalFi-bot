@@ -23,7 +23,7 @@ res.json({
       success: true,
       balance: {
         usdc: userAllocation?.amount || '0',
-        sol: '0' // Will track after trades
+        sol: '0' 
       },
       source: 'l2',
       sessionStatus: session.status
