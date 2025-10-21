@@ -50,7 +50,15 @@ app.post('/broadcast-trade', async (req, res) => {
   } catch (error) {
     res.status(500).json({ success: false, error: error.message })
   }
-});
+})
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    clearnode: clearnode.connected ? 'connected' : 'disconnected',
+    l1: 'connected', 
+uptime: process.uptime()
+  })
+})
 export function startAPI() {
   app.listen(config.api.port, () => {
     console.log(`🚀 API server running on port ${config.api.port}`)
