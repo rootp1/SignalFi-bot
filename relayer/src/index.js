@@ -2,7 +2,7 @@ import clearnode from './clearNode.js'
 import { startAPI } from './api.js'
 
 async function main() {
-  console.log(' Starting SignalFi Relayer...')
+  console.log('🚀 Starting SignalFi Relayer...')
   
   try {
     
@@ -11,9 +11,9 @@ async function main() {
     
     startAPI()
     
-    console.log(' Relayer initialized successfully')
+    console.log('✅ Relayer initialized successfully')
   } catch (error) {
-    console.error(' Failed to start relayer:', error)
+    console.error('❌ Failed to start relayer:', error)
     process.exit(1)
   }
 }

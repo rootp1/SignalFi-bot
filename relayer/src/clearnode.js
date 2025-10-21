@@ -1,5 +1,6 @@
-import WebSocket from 'ws';
-import { parseRPCResponse } from '@erc7824/nitrolite';
+import WebSocket from 'ws'
+import nitrolite from '@erc7824/nitrolite';
+const { parseAnyRPCResponse } = nitrolite;
 import config from './config.js';
 
 class ClearNodeConnection {
@@ -12,12 +13,12 @@ class ClearNodeConnection {
 
   async connect() {
     return new Promise((resolve, reject) => {
-      console.log('Connecting to ClearNode...')
+      console.log('🔌 Connecting to ClearNode...')
       
       this.ws = new WebSocket(config.clearnode.endpoint)
       
       this.ws.on('open', () => {
-        console.log(' Connected to Yellow ClearNode')
+        console.log('✅ Connected to Yellow ClearNode')
         this.connected = true
         this.reconnectAttempts = 0
         resolve()
@@ -28,12 +29,12 @@ class ClearNodeConnection {
       })
 
       this.ws.on('error', (error) => {
-        console.error(' ClearNode error:', error)
+        console.error('❌ ClearNode error:', error)
         reject(error)
       })
 
       this.ws.on('close', () => {
-        console.log('Disconnected from ClearNode')
+        console.log('⚠️ Disconnected from ClearNode')
         this.connected = false
         this.attemptReconnect()
       })
@@ -42,7 +43,7 @@ class ClearNodeConnection {
 
   handleMessage(data) {
     try {
-      const message = parseRPCResponse(data.toString())
+      const message = parseAnyRPCResponse(data.toString())
       console.log(' Received from ClearNode:', message)
 
       

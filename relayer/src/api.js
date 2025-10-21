@@ -18,7 +18,7 @@ app.post('/follow', (req, res) => {
 })
 export function startAPI() {
   app.listen(config.api.port, () => {
-    console.log(`🚀 API server running on port ${config.api.port}`);
+    console.log(`🚀 API server running on port ${config.api.port}`)
   })
 }
 
