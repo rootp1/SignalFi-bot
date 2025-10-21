@@ -1,4 +1,4 @@
-import { createStateUpdateMessage } from '@erc7824/nitrolite'
+
 import clearnode from './clearNode.js'
 import { getSession, updateSession } from './sessionManager.js'
 import { createRelayerSigner } from './utils/signer.js'
