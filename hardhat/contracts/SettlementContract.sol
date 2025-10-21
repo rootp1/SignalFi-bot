@@ -2,7 +2,6 @@
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@arcologynetwork/concurrentlib/lib/commutative/U256Cum.sol";
 import "./AmmContract.sol";
 
 contract SettlementContract {
@@ -13,8 +12,8 @@ contract SettlementContract {
     address public relayerAddress;
     address public broadcasterAddress;
 
-    // CONCURRENT-SAFE: Use concurrent data structure for deposits
-    mapping(address => U256Cumulative) private depositsMap;
+    // Normal mapping for deposits (non-concurrent version for testing)
+    mapping(address => uint256) public deposits;
 
     event Deposit(address indexed user, uint256 amount);
     event Withdraw(address indexed user, uint256 amount);
@@ -46,18 +45,14 @@ contract SettlementContract {
         require(amount > 0, "Amount must be greater than 0");
         require(usdc.transferFrom(msg.sender, address(this), amount), "Transfer failed");
 
-        // Concurrent-safe deposit update
-        if (address(depositsMap[msg.sender]) == address(0)) {
-            depositsMap[msg.sender] = new U256Cumulative(0, type(uint256).max);
-        }
-        depositsMap[msg.sender].add(amount);
+        // Update deposit balance
+        deposits[msg.sender] += amount;
 
         emit Deposit(msg.sender, amount);
     }
 
     function getDeposit(address user) public view returns (uint256) {
-        if (address(depositsMap[user]) == address(0)) return 0;
-        return depositsMap[user].get();
+        return deposits[user];
     }
 
     function settleTrades(bytes[] calldata bundled_agreements) external onlyRelayer {
@@ -115,21 +110,16 @@ contract SettlementContract {
             amountOut = 0;
         }
 
-        // Step 4: Update Deposits (CONCURRENT-SAFE)
+        // Step 4: Update Deposits
         for (uint256 i = 0; i < validTradeCount; i++) {
             address trader = traders[i];
 
-            // Initialize if needed
-            if (address(depositsMap[trader]) == address(0)) {
-                depositsMap[trader] = new U256Cumulative(0, type(uint256).max);
-            }
-
-            // Deduct cost, credit proceeds (concurrent-safe operations)
+            // Deduct cost, credit proceeds
             if (isBuyFlags[i]) {
                 // Deduct USDC cost
                 uint256 cost = amounts[i];
-                require(depositsMap[trader].get() >= cost, "Insufficient deposit");
-                depositsMap[trader].sub(cost);
+                require(deposits[trader] >= cost, "Insufficient deposit");
+                deposits[trader] -= cost;
 
                 // Credit WETH proceeds (proportional)
                 if (totalBuyAmount > 0) {
@@ -142,7 +132,7 @@ contract SettlementContract {
                 // Credit USDC proceeds
                 if (totalSellAmount > 0) {
                     uint256 usdcShare = (amounts[i] * amountOut) / totalSellAmount;
-                    depositsMap[trader].add(usdcShare);
+                    deposits[trader] += usdcShare;
                 }
             }
 
@@ -162,11 +152,10 @@ contract SettlementContract {
         require(signer == user, "Invalid signature");
 
         // Check balance
-        require(address(depositsMap[user]) != address(0), "No deposits");
-        require(depositsMap[user].get() >= amount, "Insufficient balance");
+        require(deposits[user] >= amount, "Insufficient balance");
 
-        // Concurrent-safe withdrawal
-        depositsMap[user].sub(amount);
+        // Withdrawal
+        deposits[user] -= amount;
         require(usdc.transfer(user, amount), "Transfer failed");
 
         emit Withdraw(user, amount);
