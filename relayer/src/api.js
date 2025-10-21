@@ -3,7 +3,7 @@ import config from './config.js'
 import l1Listener from './l1Listener.js'
 import { broadcastTrade, registerFollower } from './tradeExecutor.js'
 import { getSession } from './sessionManager.js'
-import { metrics } from './utils/metrics.js'
+import { Metrics } from './utils/metrics.js'
 const app = express()
 app.use(express.json())
 app.get('/balance/:address', async (req, res) => {
@@ -61,8 +61,8 @@ uptime: process.uptime()
   })
 })
 app.get('/metrics', (req, res) => {
-  res.json(metrics.getReport())
-  
+  res.json(Metrics.getReport())
+
 })
 export function startAPI() {
   app.listen(config.api.port, () => {
