@@ -16,27 +16,42 @@ const DepositUSDC = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Load user balances
-  const loadBalances = async () => {
+  // Load user balances with retry logic
+  const loadBalances = async (retryCount = 0) => {
     if (!signer || !account) return;
 
     try {
       const usdcContract = new ethers.Contract(CONTRACTS.USDC, ERC20_ABI, signer);
       const settlementContract = new ethers.Contract(CONTRACTS.SETTLEMENT, SETTLEMENT_ABI, signer);
 
-      // Get USDC balance
+      // Add delay between calls to prevent rate limiting
       const bal = await usdcContract.balanceOf(account);
       setBalance(ethers.formatUnits(bal, USDC_DECIMALS));
 
-      // Get allowance
+      await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay
+
       const allow = await usdcContract.allowance(account, CONTRACTS.SETTLEMENT);
       setAllowance(ethers.formatUnits(allow, USDC_DECIMALS));
 
-      // Get deposit balance in settlement contract
+      await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay
+
       const depBal = await settlementContract.getDeposit(account);
       setDepositBalance(ethers.formatUnits(depBal, USDC_DECIMALS));
+      
+      // Clear any previous errors on success
+      setError('');
     } catch (err) {
       console.error('Error loading balances:', err);
+      
+      // Check if it's a circuit breaker error
+      if (err.message?.includes('circuit breaker') && retryCount < 2) {
+        console.log(`Circuit breaker detected, retrying in 2 seconds... (attempt ${retryCount + 1})`);
+        setError('MetaMask rate limit detected. Retrying...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return loadBalances(retryCount + 1);
+      }
+      
+      setError('Failed to load balances. Please reset MetaMask account or try again later.');
     }
   };
 

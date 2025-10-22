@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { NETWORK_CONFIG } from '../config';
+import { createArcologyProvider, createArcologySigner } from '../utils/arcologyProvider';
 
 const WalletContext = createContext();
 
@@ -71,17 +72,17 @@ export const WalletProvider = ({ children }) => {
         method: 'eth_requestAccounts'
       });
 
-      // Create provider and signer
-      const web3Provider = new ethers.BrowserProvider(window.ethereum);
-      const web3Signer = await web3Provider.getSigner();
+      // Create Arcology-compatible provider and signer
+      const web3Provider = createArcologyProvider(window.ethereum, accounts[0]);
+      const web3Signer = await createArcologySigner(window.ethereum, accounts[0]);
       const network = await web3Provider.getNetwork();
 
       // Check if we're on the correct network
       if (Number(network.chainId) !== NETWORK_CONFIG.chainId) {
         await switchToArcologyNetwork();
-        // Reconnect after network switch
-        const newProvider = new ethers.BrowserProvider(window.ethereum);
-        const newSigner = await newProvider.getSigner();
+        // Reconnect after network switch with Arcology provider
+        const newProvider = createArcologyProvider(window.ethereum, accounts[0]);
+        const newSigner = await createArcologySigner(window.ethereum, accounts[0]);
         setProvider(newProvider);
         setSigner(newSigner);
       } else {

@@ -1,4 +1,4 @@
-0oimport { WalletProvider } from './context/WalletContext'
+import { WalletProvider } from './context/WalletContext'
 import WalletConnect from './components/WalletConnect'
 import DepositUSDC from './components/DepositUSDC'
 import './App.css'

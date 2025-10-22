@@ -3,11 +3,13 @@ const hre = require("hardhat");
 async function main() {
     const accounts = await ethers.getSigners();
     const deployer = accounts[0];
-    const relayer = accounts[1];
-    const broadcaster = accounts[2];
+    const relayer = accounts[1] || deployer; // Use deployer if no second account
+    const broadcaster = accounts[2] || deployer; // Use deployer if no third account
 
     console.log(`Deploying with account: ${deployer.address}`);
     console.log(`Account balance: ${await deployer.getBalance()}`);
+    console.log(`Relayer account: ${relayer.address}`);
+    console.log(`Broadcaster account: ${broadcaster.address}`);
 
     // Deploy MockERC20 tokens
     console.log('\n====== Deploying Tokens ======');
