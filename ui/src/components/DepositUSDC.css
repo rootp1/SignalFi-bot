@@ -1,0 +1,208 @@
+.deposit-container {
+  max-width: 500px;
+  margin: 20px auto;
+  padding: 30px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  color: white;
+}
+
+.deposit-container h2 {
+  margin-top: 0;
+  margin-bottom: 25px;
+  text-align: center;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.balance-info {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 15px;
+  margin-bottom: 25px;
+  backdrop-filter: blur(10px);
+}
+
+.balance-item {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.balance-item:last-child {
+  margin-bottom: 0;
+}
+
+.balance-label {
+  opacity: 0.9;
+  font-weight: 500;
+}
+
+.balance-value {
+  font-weight: 700;
+}
+
+.input-group {
+  margin-bottom: 20px;
+}
+
+.input-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  opacity: 0.95;
+}
+
+.input-wrapper {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.input-wrapper input {
+  flex: 1;
+  padding: 12px 15px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 10px;
+  font-size: 16px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #333;
+  transition: all 0.3s ease;
+}
+
+.input-wrapper input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.8);
+  background: white;
+}
+
+.input-wrapper input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.max-button {
+  padding: 12px 20px;
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 10px;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.max-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.6);
+  transform: translateY(-2px);
+}
+
+.max-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.button-group {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.approve-button,
+.deposit-button {
+  flex: 1;
+  padding: 14px 20px;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.approve-button {
+  background: rgba(255, 193, 7, 0.9);
+  color: #333;
+}
+
+.approve-button:hover:not(:disabled) {
+  background: rgba(255, 193, 7, 1);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 193, 7, 0.4);
+}
+
+.deposit-button {
+  background: rgba(76, 175, 80, 0.9);
+  color: white;
+}
+
+.deposit-button:hover:not(:disabled) {
+  background: rgba(76, 175, 80, 1);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+}
+
+.approve-button:disabled,
+.deposit-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.message {
+  padding: 12px;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.error-message {
+  background: rgba(244, 67, 54, 0.9);
+  color: white;
+}
+
+.success-message {
+  background: rgba(76, 175, 80, 0.9);
+  color: white;
+}
+
+.tx-hash {
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.tx-hash a {
+  color: #ffd700;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.tx-hash a:hover {
+  text-decoration: underline;
+}
+
+.connect-message {
+  text-align: center;
+  padding: 20px;
+  font-size: 16px;
+  opacity: 0.9;
+}
+
+@media (max-width: 600px) {
+  .deposit-container {
+    padding: 20px;
+    margin: 10px;
+  }
+
+  .button-group {
+    flex-direction: column;
+  }
+}
