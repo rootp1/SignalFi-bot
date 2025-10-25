@@ -1,16 +1,18 @@
 import { createAppSessionMessage } from '@erc7824/nitrolite'
 import clearnode from './clearNode.js'
 import { createRelayerSigner } from './utils/signer.js'
+import config from './config.js'
 
 const userSessions = new Map()
-const pendingStateUpdates = new Map()
+
 
 export async function openChannelForUser(userAddress, depositAmount) {
   console.log(`📡 Opening state channel for ${userAddress}...`)
+  console.log(`💰 Initial deposit: ${depositAmount} PYUSD`)
   
   const relayerAddress = await createRelayerSigner().getAddress()
   const appDefinition = {
-    protocol: 'copy-trading-v1',
+    protocol: 'pyusd-copybot-v1',
     participants: [userAddress, relayerAddress],
     weights: [50, 50],
     quorum: 100,
@@ -43,7 +45,23 @@ const allocations = [
       appDefinition,
       allocations,
       following: null,
-      createdAt: Date.now()
+     positions: {
+        pyusd: depositAmount.toString(),
+        eth: '0'
+      },
+      pnl: {
+        realized: '0',    
+        unrealized: '0',  
+        total: '0'
+      },
+      fees: {
+        paid: '0',        
+        owed: '0'         
+      },
+      trades: [],         
+      createdAt: Date.now(),
+      lastUpdated: Date.now()
+
     })
 
     console.log(`✅ Channel opened for ${userAddress}`)
@@ -52,52 +70,98 @@ const allocations = [
     throw error
   }
 }
+
 export function getSession(userAddress) {
-  return userSessions.get(userAddress.toLowerCase())
+  return userSessions.get(userAddress.toLowerCase());
 }
+
 export function updateSession(userAddress, updates) {
-  const session = userSessions.get(userAddress.toLowerCase())
+  const session = userSessions.get(userAddress.toLowerCase());
   if (session) {
-    userSessions.set(userAddress.toLowerCase(), { ...session, ...updates })
+    userSessions.set(userAddress.toLowerCase(), { 
+      ...session, 
+      ...updates,
+      lastUpdated: Date.now()
+    })
   }
 }
+
+
+export function updateUserBalance(userAddress, token, amount, operation = 'add') {
+  const session = getSession(userAddress);
+  if (!session) return;
+  
+  const currentAmount = BigInt(session.positions[token] || '0');
+  const changeAmount = BigInt(amount);
+  
+  const newAmount = operation === 'add' 
+    ? currentAmount + changeAmount 
+    : currentAmount - changeAmount;
+  
+  updateSession(userAddress, {
+    positions: {
+      ...session.positions,
+      [token]: newAmount.toString()
+    }
+  });
+  
+  console.log(`💼 Updated ${userAddress} balance: ${token} = ${newAmount.toString()}`);
+}
+
+export function updateUserPnL(userAddress, ethPrice) {
+  const session = getSession(userAddress)
+  if (!session) return
+  
+  
+  const ethPosition = BigInt(session.positions.eth || '0')
+  const ethValue = ethPosition * BigInt(Math.floor(ethPrice * 1e6)) / BigInt(1e18); // Convert to PYUSD
+  
+  const pyusdBalance = BigInt(session.positions.pyusd || '0')
+  const totalValue = pyusdBalance + ethValue
+  
+
+  const initialDeposit = BigInt(session.allocations[0]?.amount || '0')
+  const unrealizedPnL = totalValue - initialDeposit
+  
+  updateSession(userAddress, {
+    pnl: {
+      ...session.pnl,
+      unrealized: unrealizedPnL.toString(),
+      total: (BigInt(session.pnl.realized) + unrealizedPnL).toString()
+    }
+  });
+}
+
+
+export function recordTrade(userAddress, trade) {
+  const session = getSession(userAddress)
+  if (!session) return
+  
+  const tradeRecord = {
+    timestamp: Date.now(),
+    type: trade.type,     
+    fromToken: trade.fromToken,
+    toToken: trade.toToken,
+    amountIn: trade.amountIn,
+    amountOut: trade.amountOut,
+    price: trade.price,
+    txHash: trade.txHash
+  }
+  
+  updateSession(userAddress, {
+    trades: [...session.trades, tradeRecord]
+  })
+}
+
+
 clearnode.onMessage('session_created', (message) => {
-  console.log('✅ Session confirmed:', message)
+  console.log('✅ Yellow session confirmed:', message)
+  
   const userAddress = message.participants?.[0]
   if (userAddress) {
     updateSession(userAddress, { 
       status: 'active',
       sessionId: message.sessionId 
     })
-  }
-})
-export async function proposeStateUpdate(userAddress, update) {
-  const session = getSession(userAddress)
-  if (!session) throw new Error('No active session')
-  const relayerSigner = await createRelayerSigner()
-  const relayerSignature = await relayerSigner.messageSigner(
-    JSON.stringify(update)
-  )
-  const updateId = `${userAddress}-${Date.now()}`
-  pendingStateUpdates.set(updateId, {
-    update,
-    relayerSignature,
-    userSignature: null,
-    status: 'pending'
-  })
-  const stateMessage = await createStateUpdateMessage(
-    relayerSigner.messageSigner,
-    update
-  )
-  clearnode.send(stateMessage)
-  return updateId
-}
-clearnode.onMessage('state_signed', (message) => {
-  const { updateId, signature, signer } = message
- const pending = pendingStateUpdates.get(updateId)
-  if (pending) {
-    pending.userSignature = signature
-    pending.status = 'signed'
-    console.log('✅ State update fully signed:', updateId)
   }
 })

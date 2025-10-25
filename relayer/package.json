@@ -1,14 +1,22 @@
 {
-  "name": "signalfi-relayer",
+  "name": "pyusdcopybot-relayerr",
   "version": "1.0.0",
-  "description": "",
+  "description": "Backend relayer for PyUSDCopyBot - Decentralized copy trading platform",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "keywords": [
+    "defi",
+    "copy-trading",
+    "arcology",
+    "yellow-network",
+    "pyusd",
+    "blockchain"
+  ],
   "author": "",
   "license": "ISC",
   "resolutions": {
@@ -16,6 +24,7 @@
   },
   "dependencies": {
     "@erc7824/nitrolite": "^0.4.0",
+    "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "ethers": "^6.15.0",
     "express": "^5.1.0",
