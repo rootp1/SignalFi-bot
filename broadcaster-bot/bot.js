@@ -199,6 +199,122 @@ Or use /cancel to abort.
     setSession(chatId, { awaitingPrivateKey: true });
 });
 
+// /claimfaucet command
+bot.onText(/\/claimfaucet/, async (msg) => {
+    const chatId = msg.chat.id;
+    const session = getSession(chatId);
+    
+    if (!session || !session.wallet) {
+        bot.sendMessage(chatId, '⚠️ Please connect your wallet first using /connect');
+        return;
+    }
+    
+    try {
+        bot.sendMessage(chatId, '🚰 Claiming test PYUSD from faucet...');
+        
+        const faucetAbi = require('../hardhat/artifacts/contracts/ArcologyPYUSDFaucet.sol/ArcologyPYUSDFaucet.json').abi;
+        const faucet = new ethers.Contract(CONTRACTS.ArcologyPYUSDFaucet, faucetAbi, session.wallet);
+        
+        const tx = await faucet.claimPYUSD();
+        const receipt = await tx.wait();
+        
+        const successMsg = `
+✅ *Faucet Claim Successful!*
+
+*Claimed:* 100 PYUSD
+*Transaction:* \`${receipt.transactionHash}\`
+*Gas Used:* ${receipt.gasUsed.toString()}
+
+You can now:
+• Deposit to start trading: /deposit
+• Register as broadcaster: /register
+
+Claim unlimited times! 🚀
+        `;
+        
+        bot.sendMessage(chatId, successMsg, { parse_mode: 'Markdown' });
+        
+    } catch (error) {
+        console.error('Faucet claim error:', error);
+        bot.sendMessage(chatId, `❌ Claim failed: ${error.message}`);
+    }
+});
+
+// /deposit command
+bot.onText(/\/deposit(?:\s+(\d+\.?\d*))?/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const session = getSession(chatId);
+    
+    if (!session || !session.wallet) {
+        bot.sendMessage(chatId, '⚠️ Please connect your wallet first using /connect');
+        return;
+    }
+    
+    const amount = match[1];
+    
+    if (!amount) {
+        const depositMsg = `
+💵 *Deposit PYUSD*
+
+Enter the amount of PYUSD to deposit:
+Example: \`/deposit 1000\`
+
+Your deposit will be used when you broadcast signals.
+All followers will copy your trades proportionally.
+
+Or use /cancel to abort.
+        `;
+        
+        bot.sendMessage(chatId, depositMsg, { parse_mode: 'Markdown' });
+        return;
+    }
+    
+    try {
+        const depositAmount = ethers.utils.parseUnits(amount, 6);
+        
+        bot.sendMessage(chatId, `💵 Depositing ${amount} PYUSD...`);
+        
+        const pyusdAbi = require('../hardhat/artifacts/contracts/ArcologyPYUSD.sol/ArcologyPYUSD.json').abi;
+        const executorAbi = require('../hardhat/artifacts/contracts/ParallelBatchExecutor.sol/ParallelBatchExecutor.json').abi;
+        
+        const pyusd = new ethers.Contract(CONTRACTS.ArcologyPYUSD, pyusdAbi, session.wallet);
+        const executor = new ethers.Contract(CONTRACTS.ParallelBatchExecutor, executorAbi, session.wallet);
+        
+        // Approve
+        bot.sendMessage(chatId, '✅ Step 1/2: Approving PYUSD...');
+        const approveTx = await pyusd.approve(CONTRACTS.ParallelBatchExecutor, depositAmount);
+        await approveTx.wait();
+        
+        // Deposit
+        bot.sendMessage(chatId, '✅ Step 2/2: Depositing to executor...');
+        const depositTx = await executor.deposit(depositAmount);
+        const receipt = await depositTx.wait();
+        
+        const successMsg = `
+✅ *Deposit Successful!*
+
+*Amount:* ${amount} PYUSD
+*Transaction:* \`${receipt.transactionHash}\`
+*Gas Used:* ${receipt.gasUsed.toString()}
+
+Your PYUSD is now deposited!
+
+Next steps:
+• Register as broadcaster: /register
+• Post your first signal: /broadcast
+• Check stats: /stats
+
+When you broadcast a signal, you and all your followers will trade using your full deposited balances.
+        `;
+        
+        bot.sendMessage(chatId, successMsg, { parse_mode: 'Markdown' });
+        
+    } catch (error) {
+        console.error('Deposit error:', error);
+        bot.sendMessage(chatId, `❌ Deposit failed: ${error.message}`);
+    }
+});
+
 // /register command
 bot.onText(/\/register/, async (msg) => {
     const chatId = msg.chat.id;
