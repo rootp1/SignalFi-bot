@@ -231,7 +231,7 @@ app.post('/unfollow', async (req, res) => {
   }
 })
 app.post('/broadcast-trade', async (req, res) => {
-  const { broadcasterAddress, direction, ethPrice } = req.body
+  const { broadcasterAddress, direction, ethPrice, broadcasterTxHash } = req.body
   
   try {
     
@@ -266,10 +266,13 @@ app.post('/broadcast-trade', async (req, res) => {
     }
     
     console.log(`📊 Processing ${direction} signal from ${broadcasterAddress}`)
+    if (broadcasterTxHash) {
+      console.log(`⚡ Broadcaster already executed on L1: ${broadcasterTxHash}`)
+    }
     console.log(`💱 Current ETH price: ${currentEthPrice}`)
     console.log(`🔄 Trade type: ${trade.type}, ${trade.fromToken} → ${trade.toToken}`)
     
-    const result = await broadcastTrade(broadcasterAddress, trade, currentEthPrice)
+    const result = await broadcastTrade(broadcasterAddress, trade, currentEthPrice, broadcasterTxHash)
     
     res.json({
       ...result,

@@ -748,6 +748,69 @@ bot.onText(/\/cancel/, async (msg) => {
     bot.sendMessage(chatId, '❌ Operation cancelled.');
 });
 
+// ERC20 ABI (minimal - just what we need)
+const ERC20_ABI = [
+    'function approve(address spender, uint256 amount) public returns (bool)',
+    'function balanceOf(address account) public view returns (uint256)',
+    'function allowance(address owner, address spender) public view returns (uint256)'
+];
+
+// AMM ABI (minimal - just swap function)
+const AMM_ABI = [
+    'function swap(address tokenIn, address tokenOut, uint256 amountIn, address to) public returns (bool)'
+];
+
+/**
+ * Execute broadcaster's trade directly on L1
+ */
+async function executeBroadcasterTradeOnL1(wallet, signalType, amount) {
+    console.log(`🔥 Executing broadcaster L1 trade: ${signalType} ${amount}`);
+    
+    const isBuy = signalType === 'BUY';
+    const tokenIn = isBuy ? CONTRACTS.ArcologyPYUSD : CONTRACTS.ArcologyWETH;
+    const tokenOut = isBuy ? CONTRACTS.ArcologyWETH : CONTRACTS.ArcologyPYUSD;
+    
+    // Convert amount to wei/smallest unit
+    const amountInWei = ethers.utils.parseUnits(amount.toString(), isBuy ? 6 : 18); // PYUSD has 6 decimals, WETH has 18
+    
+    // Create contract instances
+    const tokenInContract = new ethers.Contract(tokenIn, ERC20_ABI, wallet);
+    const ammContract = new ethers.Contract(CONTRACTS.AMM, AMM_ABI, wallet);
+    
+    console.log(`📊 Trade details:
+    - Type: ${signalType}
+    - Token In: ${tokenIn}
+    - Token Out: ${tokenOut}
+    - Amount: ${amountInWei.toString()}
+    `);
+    
+    // Step 1: Approve AMM to spend tokens (always approve, Arcology contracts work differently)
+    console.log('📝 Approving AMM to spend tokens...');
+    const approveTx = await tokenInContract.approve(CONTRACTS.AMM, amountInWei, {
+        gasLimit: 300000 // Explicit gas limit for Arcology
+    });
+    await approveTx.wait();
+    console.log(`✅ Approval confirmed: ${approveTx.hash}`);
+    
+    // Step 2: Execute swap on L1
+    console.log('🔄 Executing swap on AMM...');
+    const swapTx = await ammContract.swap(
+        tokenIn,
+        tokenOut,
+        amountInWei,
+        wallet.address,
+        {
+            gasLimit: 500000 // Explicit gas limit for Arcology
+        }
+    );
+    
+    console.log(`⏳ Waiting for swap confirmation...`);
+    const receipt = await swapTx.wait();
+    console.log(`✅ Swap confirmed! Tx: ${swapTx.hash}`);
+    
+    return swapTx.hash;
+}
+
 // Handle callback queries
 bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
@@ -762,7 +825,15 @@ bot.on('callback_query', async (query) => {
         bot.answerCallbackQuery(query.id, { text: 'Broadcasting signal...' });
         
         try {
-            bot.sendMessage(chatId, '📡 Broadcasting signal to relayer...');
+            // Step 1: Execute broadcaster's own trade on L1 FIRST
+            bot.sendMessage(chatId, '� Executing your trade on L1...');
+            
+            const broadcasterTxHash = await executeBroadcasterTradeOnL1(session.wallet, signalType, amount);
+            
+            bot.sendMessage(chatId, `✅ Your L1 trade executed!\n*Tx:* \`${broadcasterTxHash}\``, { parse_mode: 'Markdown' });
+            
+            // Step 2: Now broadcast signal to followers via relayer
+            bot.sendMessage(chatId, '📡 Broadcasting signal to followers...');
             
             const RELAYER_URL = process.env.RELAYER_URL || 'http://localhost:3000';
             const direction = signalType === 'BUY' ? 'BUY_ETH' : 'SELL_ETH';
@@ -770,20 +841,22 @@ bot.on('callback_query', async (query) => {
             const response = await axios.post(`${RELAYER_URL}/broadcast-trade`, {
                 broadcasterAddress: session.wallet.address,
                 direction: direction,
-                ethPrice: 3000 // Default ETH price
+                ethPrice: 3000, // Default ETH price
+                broadcasterTxHash: broadcasterTxHash // Include broadcaster's tx hash
             });
             
             const successMsg = `
-✅ *Signal Broadcast Successful!*
+✅ *Signal Broadcast Complete!*
 
 *Type:* ${signalType}
 *Direction:* ${direction}
+
+*Your Trade (L1):* \`${broadcasterTxHash}\`
 *Followers Executed:* ${response.data.followersExecuted || 0}
 
-${response.data.l1TxHash ? `*L1 Transaction:* \`${response.data.l1TxHash}\`` : ''}
-${response.data.gasUsed ? `*Gas Used:* ${response.data.gasUsed}` : ''}
+${response.data.followersTxHash ? `*Followers Tx:* \`${response.data.followersTxHash}\`` : ''}
 
-Your signal has been executed!
+Signal executed successfully!
             `;
             
             bot.sendMessage(chatId, successMsg, { parse_mode: 'Markdown' });

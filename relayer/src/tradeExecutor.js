@@ -78,51 +78,69 @@ async function getFollowersFromMongoDB(broadcasterAddress) {
   }
 }
 
-export async function broadcastTrade(broadcasterAddress, trade, currentEthPrice) {
+export async function broadcastTrade(broadcasterAddress, trade, currentEthPrice, broadcasterTxHash = null) {
   console.log(`📡 Broadcasting ${trade.direction} from ${broadcasterAddress}`)
+  
+  if (broadcasterTxHash) {
+    console.log(`⚡ Broadcaster already executed on L1: ${broadcasterTxHash}`)
+    console.log(`📢 Now executing trades for followers only...`)
+  }
   
   // Step 1: Fetch followers from MongoDB
   const followerAddresses = await getFollowersFromMongoDB(broadcasterAddress)
   
   if (!followerAddresses || followerAddresses.length === 0) {
     console.log('ℹ️ No followers for this broadcaster')
-    return { success: true, followersExecuted: 0 }
+    return { 
+      success: true, 
+      followersExecuted: 0,
+      broadcasterExecuted: broadcasterTxHash ? true : false,
+      broadcasterTxHash: broadcasterTxHash || null
+    }
   }
 
   console.log(`👥 Found ${followerAddresses.length} followers from MongoDB`)
   
-  // Step 2: Get broadcaster session and balance
-  const broadcasterSession = getSession(broadcasterAddress)
-  if (!broadcasterSession || broadcasterSession.status !== 'active') {
-    throw new Error('Broadcaster does not have active Yellow session. Please deposit first.')
-  }
-  
-  // Determine which balance to use based on trade direction
-  const broadcasterBalance = trade.fromToken === 'pyusd' 
-    ? broadcasterSession.positions.pyusd 
-    : broadcasterSession.positions.eth
-    
-  if (!broadcasterBalance || BigInt(broadcasterBalance) === 0n) {
-    throw new Error(`Broadcaster has zero ${trade.fromToken.toUpperCase()} balance`)
-  }
-  
-  console.log(`💰 Broadcaster balance: ${broadcasterBalance} ${trade.fromToken.toUpperCase()}`)
-  
   const tradeProposals = []
   const executedFollowers = []
   
-  // Step 3: Create broadcaster trade (FULL BALANCE)
-  tradeProposals.push({
-    trader: broadcasterAddress,
-    direction: trade.direction, // BUY_ETH or SELL_ETH
-    fromToken: trade.fromToken,
-    toToken: trade.toToken,
-    amount: broadcasterBalance, // FULL BALANCE!
-    signature: '', // Will be signed by relayer
-    isBroadcaster: true
-  })
-  
-  console.log(`✅ Broadcaster will trade FULL balance: ${broadcasterBalance}`)
+  // Step 2: Handle broadcaster trade
+  // If broadcaster already executed on L1, skip adding them to the Yellow batch
+  // Otherwise, add broadcaster to Yellow batch (old behavior)
+  if (!broadcasterTxHash) {
+    console.log(`🟡 Adding broadcaster to Yellow batch...`)
+    
+    const broadcasterSession = getSession(broadcasterAddress)
+    if (!broadcasterSession || broadcasterSession.status !== 'active') {
+      throw new Error('Broadcaster does not have active Yellow session. Please deposit first.')
+    }
+    
+    // Determine which balance to use based on trade direction
+    const broadcasterBalance = trade.fromToken === 'pyusd' 
+      ? broadcasterSession.positions.pyusd 
+      : broadcasterSession.positions.eth
+      
+    if (!broadcasterBalance || BigInt(broadcasterBalance) === 0n) {
+      throw new Error(`Broadcaster has zero ${trade.fromToken.toUpperCase()} balance`)
+    }
+    
+    console.log(`💰 Broadcaster balance: ${broadcasterBalance} ${trade.fromToken.toUpperCase()}`)
+    
+    // Step 3: Create broadcaster trade (FULL BALANCE)
+    tradeProposals.push({
+      trader: broadcasterAddress,
+      direction: trade.direction, // BUY_ETH or SELL_ETH
+      fromToken: trade.fromToken,
+      toToken: trade.toToken,
+      amount: broadcasterBalance, // FULL BALANCE!
+      signature: '', // Will be signed by relayer
+      isBroadcaster: true
+    })
+    
+    console.log(`✅ Broadcaster will trade FULL balance: ${broadcasterBalance}`)
+  } else {
+    console.log(`⏭️ Skipping broadcaster from Yellow batch (already executed on L1)`)
+  }
 
   // Step 4: Create follower trades (FULL BALANCES)
   for (const followerAddress of followerAddresses) {
@@ -146,22 +164,41 @@ export async function broadcastTrade(broadcasterAddress, trade, currentEthPrice)
     }
   }
 
-  console.log(`📦 Bundling ${tradeProposals.length} trades (1 broadcaster + ${executedFollowers.length} followers)...`)
+  const broadcasterInBatch = !broadcasterTxHash;
+  const tradeCount = broadcasterInBatch ? `1 broadcaster + ${executedFollowers.length} followers` : `${executedFollowers.length} followers only`;
+  console.log(`📦 Bundling ${tradeProposals.length} trades (${tradeCount})...`)
   
   // Step 5: Update Yellow channel states FIRST (instant updates!)
-  console.log(`⚡ Updating Yellow state channels instantly...`)
-  await updateYellowChannelStates(
-    [broadcasterAddress, ...executedFollowers],
-    trade,
-    currentEthPrice
-  )
+  // Only update Yellow state for users in the batch (excludes broadcaster if they traded on L1)
+  if (tradeProposals.length > 0) {
+    console.log(`⚡ Updating Yellow state channels instantly...`)
+    const addressesToUpdate = broadcasterInBatch 
+      ? [broadcasterAddress, ...executedFollowers]
+      : executedFollowers;
+    
+    await updateYellowChannelStates(
+      addressesToUpdate,
+      trade,
+      currentEthPrice
+    )
+  }
   
-  // Step 6: Submit bundle to L1 for settlement
-  const result = await submitBundleToL1(tradeProposals)
+  // Step 6: Submit bundle to L1 for settlement (if there are any trades)
+  let result = { success: true, txHash: null, gasUsed: 0 };
+  
+  if (tradeProposals.length > 0) {
+    result = await submitBundleToL1(tradeProposals)
+  } else {
+    console.log('⚠️ No trades to submit to L1')
+  }
   
   // Step 7: Record trades after successful L1 settlement
-  if (result.success) {
-    for (const followerAddress of [broadcasterAddress, ...executedFollowers]) {
+  if (result.success && tradeProposals.length > 0) {
+    const addressesToRecord = broadcasterInBatch 
+      ? [broadcasterAddress, ...executedFollowers]
+      : executedFollowers;
+      
+    for (const followerAddress of addressesToRecord) {
       recordTrade(followerAddress, {
         type: trade.type,
         direction: trade.direction,
@@ -177,7 +214,9 @@ export async function broadcastTrade(broadcasterAddress, trade, currentEthPrice)
     success: result.success,
     followersExecuted: executedFollowers.length,
     broadcasterExecuted: true,
-    txHash: result.txHash,
+    broadcasterTxHash: broadcasterTxHash || null,
+    followersTxHash: result.txHash,
+    txHash: broadcasterTxHash || result.txHash, // Return broadcaster tx if they executed on L1
     gasUsed: result.gasUsed
   }
 }
