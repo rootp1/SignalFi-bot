@@ -18,9 +18,22 @@ import axios from 'axios'
 export async function registerFollower(userAddress, broadcasterAddress) {
   console.log(`👤 ${userAddress} following ${broadcasterAddress}`)
   
-  // Registration happens via broadcaster-service and on-chain
-  // This function mainly for updating local session state
+  // Save follower relationship to MongoDB via broadcaster-service
+  try {
+    await axios.post(
+      `${config.broadcasting.broadcasterServiceUrl || 'http://localhost:3002'}/follow`,
+      {
+        followerAddress: userAddress,
+        broadcasterAddress: broadcasterAddress
+      }
+    )
+    console.log(`✅ Follower saved to MongoDB via broadcaster-service`)
+  } catch (error) {
+    console.error(`⚠️ Failed to save follower to MongoDB:`, error.message)
+    // Continue anyway - update local session
+  }
   
+  // Update local session state
   updateSession(userAddress, { 
     following: broadcasterAddress,
     followedAt: Date.now()
@@ -101,6 +114,7 @@ export async function broadcastTrade(broadcasterAddress, trade, currentEthPrice)
   // Step 3: Create broadcaster trade (FULL BALANCE)
   tradeProposals.push({
     trader: broadcasterAddress,
+    direction: trade.direction, // BUY_ETH or SELL_ETH
     fromToken: trade.fromToken,
     toToken: trade.toToken,
     amount: broadcasterBalance, // FULL BALANCE!
@@ -222,6 +236,7 @@ async function createFollowerTrade(followerAddress, broadcasterTrade, session, e
     // Create trade proposal with FULL balance
     return {
       trader: followerAddress,
+      direction: broadcasterTrade.direction, // BUY_ETH or SELL_ETH
       fromToken: broadcasterTrade.fromToken,
       toToken: broadcasterTrade.toToken,
       amount: followerBalance, // FULL BALANCE!

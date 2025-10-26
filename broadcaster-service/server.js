@@ -8,6 +8,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 const Follower = require('./models/Follower');
 const UserChat = require('./models/UserChat');
 const Signal = require('./models/Signal');
+const Broadcaster = require('./models/Broadcaster');
 const EventSyncService = require('./eventSync');
 
 // Load deployment info
@@ -43,6 +44,76 @@ app.get('/health', (req, res) => {
         service: 'broadcaster-service',
         mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
     });
+});
+
+/**
+ * Register a broadcaster (save to MongoDB)
+ */
+app.post('/broadcaster/register', async (req, res) => {
+    try {
+        const { address, name, feePercentage, transactionHash, blockNumber } = req.body;
+
+        if (!address || !name || !feePercentage || !transactionHash) {
+            return res.status(400).json({ 
+                error: 'address, name, feePercentage, and transactionHash are required' 
+            });
+        }
+
+        const broadcaster = await Broadcaster.findOneAndUpdate(
+            { address: address.toLowerCase() },
+            {
+                address: address.toLowerCase(),
+                name,
+                feePercentage,
+                transactionHash,
+                blockNumber,
+                isActive: true,
+                registeredAt: new Date()
+            },
+            { upsert: true, new: true }
+        );
+
+        res.json({
+            success: true,
+            broadcaster
+        });
+    } catch (error) {
+        console.error('Error registering broadcaster:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Get broadcaster details by address
+ */
+app.get('/broadcaster/:address', async (req, res) => {
+    try {
+        const { address } = req.params;
+        
+        const broadcaster = await Broadcaster.findOne({ 
+            address: address.toLowerCase() 
+        });
+
+        if (!broadcaster) {
+            return res.json({
+                isRegistered: false,
+                address: address.toLowerCase()
+            });
+        }
+
+        res.json({
+            isRegistered: true,
+            address: broadcaster.address,
+            name: broadcaster.name,
+            fee: broadcaster.feePercentage,
+            isActive: broadcaster.isActive,
+            isVerified: broadcaster.isVerified,
+            registeredAt: broadcaster.registeredAt
+        });
+    } catch (error) {
+        console.error('Error fetching broadcaster:', error);
+        res.status(500).json({ error: error.message });
+    }
 });
 
 /**
@@ -143,6 +214,40 @@ app.post('/register-user', async (req, res) => {
         });
     } catch (error) {
         console.error('Error registering user:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Follow a broadcaster (save follower relationship to MongoDB)
+ */
+app.post('/follow', async (req, res) => {
+    try {
+        const { followerAddress, broadcasterAddress } = req.body;
+
+        if (!followerAddress || !broadcasterAddress) {
+            return res.status(400).json({ error: 'followerAddress and broadcasterAddress are required' });
+        }
+
+        const follower = await Follower.findOneAndUpdate(
+            { 
+                followerAddress: followerAddress.toLowerCase(),
+                broadcasterAddress: broadcasterAddress.toLowerCase()
+            },
+            { 
+                followerAddress: followerAddress.toLowerCase(),
+                broadcasterAddress: broadcasterAddress.toLowerCase(),
+                followedAt: new Date()
+            },
+            { upsert: true, new: true }
+        );
+
+        res.json({
+            success: true,
+            follower: follower
+        });
+    } catch (error) {
+        console.error('Error following broadcaster:', error);
         res.status(500).json({ error: error.message });
     }
 });

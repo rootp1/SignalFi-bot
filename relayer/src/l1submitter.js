@@ -3,77 +3,55 @@ import config from './config.js'
 import { createRelayerSigner } from './utils/signer.js'
 
 const PARALLEL_BATCH_EXECUTOR_ABI = [
-  "function executeBatch(bytes[] calldata bundledTrades) external returns (bool)",
-  "function getExecutionResult(bytes32 batchId) view returns (uint256[] memory)",
-  "event BatchExecuted(bytes32 indexed batchId, uint256 tradeCount, uint256 gasUsed)"
-]
-const PYUSD_VAULT_ABI = [
-  "function deposits(address user) view returns (uint256)",
-  "function withdraw(uint256 amount) external",
-  "event Deposit(address indexed user, uint256 amount, uint256 timestamp)",
-  "event Withdrawal(address indexed user, uint256 amount, uint256 timestamp)"
+  "function executeBatchBuy(address[] calldata users, uint256[] calldata amounts) external returns (uint256)",
+  "function executeBatchSell(address[] calldata users, uint256[] calldata amounts) external returns (uint256)",
+  "event BatchExecuted(uint256 indexed batchId, uint256 userCount, uint256 totalAmountIn, uint256 totalAmountOut, uint256 timestamp)",
+  "event TradeExecuted(address indexed user, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut, uint256 timestamp)"
 ]
 
 export async function submitBundleToL1(tradeProposals) {
   console.log(`📤 Submitting bundle of ${tradeProposals.length} trades to L1...`)
-    try {
+  
+  try {
     const signer = new ethers.Wallet(
       config.l1.relayerPrivateKey,
       new ethers.JsonRpcProvider(config.l1.rpcUrl)
     )
  
     const batchExecutor = new ethers.Contract(
-      config.l1.simpleAMM, 
+      config.l1.parallelBatchExecutor,
       PARALLEL_BATCH_EXECUTOR_ABI,
       signer
     )
 
- 
-    const encodedTrades = tradeProposals.map(trade => {
-      return ethers.AbiCoder.defaultAbiCoder().encode(
-        ['address', 'address', 'address', 'uint256', 'bytes', 'bool'],
-        [
-          trade.trader,
-          trade.fromToken === 'pyusd' ? config.l1.pyusd : config.l1.eth,
-          trade.toToken === 'eth' ? config.l1.eth : config.l1.pyusd,
-          trade.amount,
-          trade.signature,
-          trade.isBroadcaster || false
-        ]
-      )
-    })
-
-    console.log('📝 Calling executeBatch() on ParallelBatchExecutor...')
-    console.log(`💰 Estimated cost: $${config.fees.trade} per user`)
+    // Determine if this is a BUY or SELL based on the first trade
+    const isBuy = tradeProposals[0].direction === 'BUY_ETH'
     
- 
-    let gasLimit
-    try {
-      const gasEstimate = await batchExecutor.executeBatch.estimateGas(encodedTrades)
-      gasLimit = gasEstimate * 120n / 100n
-      console.log(`⛽ Gas estimate: ${gasEstimate.toString()} (limit: ${gasLimit.toString()})`)
-    } catch (error) {
-      console.warn('⚠️ Gas estimation failed, using default:', error.message)
-      gasLimit = 20000000n
-    }
-  
-    const tx = await batchExecutor.executeBatch(encodedTrades, {
-      gasLimit: gasLimit
-    })
+    // Extract user addresses and amounts
+    const users = tradeProposals.map(trade => trade.trader)
+    const amounts = tradeProposals.map(trade => trade.amount)
+    
+    console.log(`📝 Calling ${isBuy ? 'executeBatchBuy' : 'executeBatchSell'}() on ParallelBatchExecutor...`)
+    console.log(`� Users: ${users.length}`)
+    console.log(`💰 Total amount: ${amounts.reduce((a, b) => BigInt(a) + BigInt(b), 0n).toString()}`)
+    
+    // Call the appropriate batch function
+    const tx = isBuy 
+      ? await batchExecutor.executeBatchBuy(users, amounts)
+      : await batchExecutor.executeBatchSell(users, amounts)
     
     console.log(`⏳ Transaction sent: ${tx.hash}`)
-    console.log(`🔗 View on explorer: https://testnet-explorer.arcology.network/tx/${tx.hash}`);
+    console.log(`🔗 View on explorer: https://testnet-explorer.arcology.network/tx/${tx.hash}`)
     
-    const receipt = await tx.wait();
+    const receipt = await tx.wait()
     
-    const gasUsed = receipt.gasUsed.toString();
+    const gasUsed = receipt.gasUsed.toString()
     const gasPrice = receipt.gasPrice || receipt.effectiveGasPrice || 0n
     const costInGwei = (BigInt(gasUsed) * BigInt(gasPrice)) / BigInt(1e9)
     
     console.log(`✅ Bundle settled successfully!`)
     console.log(`   Gas used: ${gasUsed}`)
     console.log(`   Cost: ${costInGwei.toString()} gwei`)
-    console.log(`   Per user: ~$${config.fees.trade}`)
     
     return {
       success: true,

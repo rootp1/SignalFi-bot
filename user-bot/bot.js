@@ -11,7 +11,7 @@ const deploymentInfo = require('../hardhat/deployment-info.json');
 // Configuration
 const BOT_TOKEN = process.env.user_bot_token;
 const RPC_URL = process.env.RPC_URL || 'https://achievement-acts-content-guys.trycloudflare.com';
-const BROADCASTER_SERVICE_URL = process.env.BROADCASTER_SERVICE_URL || 'http://localhost:3001';
+const BROADCASTER_SERVICE_URL = process.env.BROADCASTER_SERVICE_URL || 'http://localhost:3002';
 const CHAIN_ID = 118;
 
 // Contracts
@@ -335,6 +335,21 @@ Or use /cancel to abort.
         const depositTx = await executor.deposit(depositAmount);
         const receipt = await depositTx.wait();
         
+        // Register deposit with relayer (Arcology workaround)
+        bot.sendMessage(chatId, '✅ Step 3/3: Registering deposit with relayer...');
+        try {
+            const RELAYER_URL = process.env.RELAYER_URL || 'http://localhost:3000';
+            await axios.post(`${RELAYER_URL}/register-deposit`, {
+                address: session.wallet.address,
+                amount: depositAmount.toString(),
+                txHash: receipt.transactionHash
+            });
+            console.log(`✅ Deposit registered for ${session.wallet.address}: ${amount} PYUSD`);
+        } catch (registerError) {
+            console.error('⚠️ Failed to register deposit with relayer:', registerError.message);
+            // Continue anyway - deposit was successful on-chain
+        }
+        
         const successMsg = `
 ✅ *Deposit Successful!*
 
@@ -455,6 +470,12 @@ Or use /cancel to abort.
         }
         
         bot.sendMessage(chatId, '👤 Following broadcaster...');
+        
+        // Call broadcaster-service to register follower relationship in MongoDB
+        await axios.post(`${BROADCASTER_SERVICE_URL}/follow`, {
+            followerAddress: session.wallet.address,
+            broadcasterAddress: broadcasterAddress
+        });
         
         const registryAbi = require('../hardhat/artifacts/contracts/BroadcasterRegistry.sol/BroadcasterRegistry.json').abi;
         const registry = new ethers.Contract(CONTRACTS.BroadcasterRegistry, registryAbi, session.wallet);

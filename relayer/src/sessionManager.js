@@ -45,7 +45,7 @@ export async function openChannelForUser(userAddress, depositAmount) {
 
     clearnode.send(sessionMessage)
     userSessions.set(userAddress.toLowerCase(), {
-      status: 'pending',
+      status: 'active',  // Active immediately after deposit
       appDefinition,
       allocations,
       following: null,

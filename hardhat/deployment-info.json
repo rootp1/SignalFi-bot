@@ -1,13 +1,13 @@
 {
   "network": "arcology",
   "chainId": 118,
-  "timestamp": "2025-10-26T06:56:45.919Z",
+  "timestamp": "2025-10-26T12:18:31.425Z",
   "contracts": {
     "ArcologyPYUSD": "0x6227c6D08dCF35caf085C3e9BA5a785D092c7975",
     "ArcologyWETH": "0x1A6D88e66bdA1fcEf022F0997341F9260BC702ae",
     "AMM": "0x0212586E531810A4A7CBc76dc01A7539e5859232",
     "ParallelBatchExecutor": "0xb7503EdEfc1F21Bb56df3Cb34564D40811004259",
-    "BroadcasterRegistry": "0xf7fB0cda93257ADeF7942072A650f107Ed9fe57E",
+    "BroadcasterRegistry": "0x9a08A2c0ce632B482C936bcEc7d3b02151e71d00",
     "ArcologyPYUSDFaucet": "0x5B5D3eB216B3DDF6d0EC24f1184B263B9C4eB1aa",
     "ARCFaucet": "0x697ec77791EEb759eaf1B9ad515E35DBAeBb455c"
   },

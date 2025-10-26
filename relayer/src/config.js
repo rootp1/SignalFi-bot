@@ -4,19 +4,16 @@ dotenv.config();
 export default {
   l1: {
     rpcUrl: process.env.L1_RPC_URL,
-      chainId: parseInt(process.env.L1_CHAIN_ID || '8888'),
-
+    chainId: parseInt(process.env.L1_CHAIN_ID || '8888'),
     settlementContract: process.env.SETTLEMENT_CONTRACT_ADDRESS,
     ammContract: process.env.AMM_CONTRACT_ADDRESS,
+    parallelBatchExecutor: process.env.PARALLEL_BATCH_EXECUTOR_ADDRESS,
     relayerPrivateKey: process.env.RELAYER_PRIVATE_KEY,
-     pyusdVault: process.env.SETTLEMENT_CONTRACT_ADDRESS,
+    pyusdVault: process.env.SETTLEMENT_CONTRACT_ADDRESS,
     simpleAMM: process.env.AMM_CONTRACT_ADDRESS,
     broadcasterRegistry: process.env.BROADCASTER_REGISTRY_ADDRESS,
-     pyusd: process.env.PYUSD_ADDRESS,
-    eth: process.env.ETH_ADDRESS,
-    
-relayerPrivateKey: process.env.RELAYER_PRIVATE_KEY
-
+    pyusd: process.env.PYUSD_TOKEN_ADDRESS,
+    eth: process.env.ETH_ADDRESS
   },
   clearnode: {
     endpoint: process.env.CLEARNODE_ENDPOINT,

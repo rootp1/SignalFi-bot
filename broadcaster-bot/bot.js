@@ -11,7 +11,7 @@ const deploymentInfo = require('../hardhat/deployment-info.json');
 // Configuration
 const BOT_TOKEN = process.env.broadcaster_bot_token;
 const RPC_URL = process.env.RPC_URL || 'https://achievement-acts-content-guys.trycloudflare.com';
-const BROADCASTER_SERVICE_URL = process.env.BROADCASTER_SERVICE_URL || 'http://localhost:3001';
+const BROADCASTER_SERVICE_URL = process.env.BROADCASTER_SERVICE_URL || 'http://localhost:3002';
 const CHAIN_ID = 118;
 
 // Contracts
@@ -28,18 +28,30 @@ const userSessions = new Map();
 const SESSION_FILE = path.join(__dirname, 'sessions.json');
 
 // Load sessions from file on startup
-function loadSessions() {
+async function loadSessions() {
     try {
         if (fs.existsSync(SESSION_FILE)) {
             const data = fs.readFileSync(SESSION_FILE, 'utf8');
             const sessions = JSON.parse(data);
-            Object.entries(sessions).forEach(([chatId, sessionData]) => {
+            
+            for (const [chatId, sessionData] of Object.entries(sessions)) {
                 if (sessionData.privateKey) {
                     const wallet = new ethers.Wallet(sessionData.privateKey, provider);
-                    userSessions.set(chatId, { wallet });
-                    console.log(`✅ Restored session for chat ${chatId}: ${wallet.address.slice(0, 10)}...`);
+                    
+                    // Fetch broadcaster details from broadcaster-service (MongoDB)
+                    const broadcasterDetails = await fetchBroadcasterDetails(wallet);
+                    
+                    userSessions.set(chatId, { 
+                        wallet,
+                        broadcasterDetails 
+                    });
+                    
+                    const status = broadcasterDetails.isRegistered 
+                        ? `${broadcasterDetails.name} (${broadcasterDetails.fee}%)` 
+                        : 'Not registered';
+                    console.log(`✅ Restored session for chat ${chatId}: ${wallet.address.slice(0, 10)}... - ${status}`);
                 }
-            });
+            }
             console.log(`📂 Loaded ${userSessions.size} saved sessions`);
         }
     } catch (error) {
@@ -57,6 +69,7 @@ function saveSessions() {
                     privateKey: session.wallet.privateKey,
                     address: session.wallet.address
                 };
+                // Note: Broadcaster details are stored in MongoDB, not in sessions.json
             }
         });
         fs.writeFileSync(SESSION_FILE, JSON.stringify(sessions, null, 2));
@@ -94,6 +107,19 @@ function setSession(chatId, data) {
         saveSessions();
     } catch (e) {
         console.error('⚠️ Error persisting session:', e.message);
+    }
+}
+
+// Helper function to fetch broadcaster details from broadcaster-service MongoDB
+async function fetchBroadcasterDetails(wallet) {
+    try {
+        const response = await axios.get(`${BROADCASTER_SERVICE_URL}/broadcaster/${wallet.address}`);
+        return response.data;
+    } catch (error) {
+        console.error('Error fetching broadcaster details:', error.message);
+        return {
+            isRegistered: false
+        };
     }
 }
 
@@ -290,6 +316,21 @@ Or use /cancel to abort.
         const depositTx = await executor.deposit(depositAmount);
         const receipt = await depositTx.wait();
         
+        // Register deposit with relayer (Arcology workaround)
+        bot.sendMessage(chatId, '✅ Step 3/3: Registering deposit with relayer...');
+        try {
+            const RELAYER_URL = process.env.RELAYER_URL || 'http://localhost:3000';
+            await axios.post(`${RELAYER_URL}/register-deposit`, {
+                address: session.wallet.address,
+                amount: depositAmount.toString(),
+                txHash: receipt.transactionHash
+            });
+            console.log(`✅ Deposit registered for ${session.wallet.address}: ${amount} PYUSD`);
+        } catch (registerError) {
+            console.error('⚠️ Failed to register deposit with relayer:', registerError.message);
+            // Continue anyway - deposit was successful on-chain
+        }
+        
         const successMsg = `
 ✅ *Deposit Successful!*
 
@@ -297,7 +338,7 @@ Or use /cancel to abort.
 *Transaction:* \`${receipt.transactionHash}\`
 *Gas Used:* ${receipt.gasUsed.toString()}
 
-Your PYUSD is now deposited!
+Your PYUSD is now deposited and ready for trading!
 
 Next steps:
 • Register as broadcaster: /register
@@ -322,6 +363,28 @@ bot.onText(/\/register/, async (msg) => {
     
     if (!session || !session.wallet) {
         bot.sendMessage(chatId, '⚠️ Please connect your wallet first using /connect');
+        return;
+    }
+    
+    // Check if already registered (from cached session data)
+    const broadcasterDetails = session.broadcasterDetails;
+    
+    if (broadcasterDetails && broadcasterDetails.isRegistered) {
+        const alreadyRegisteredMsg = `
+✅ *Already Registered!*
+
+You are already registered as a broadcaster:
+
+📝 Name: ${broadcasterDetails.name}
+💰 Fee: ${broadcasterDetails.fee}%
+${broadcasterDetails.isActive ? '✅ Active' : '⚠️ Inactive'}
+
+You can:
+• Post signals: /broadcast
+• Check your stats: /stats
+• View followers: /followers
+        `;
+        bot.sendMessage(chatId, alreadyRegisteredMsg, { parse_mode: 'Markdown' });
         return;
     }
     
@@ -477,37 +540,33 @@ bot.onText(/\/followers/, async (msg) => {
     try {
         bot.sendMessage(chatId, '👥 Fetching follower information...');
         
-        // Try to get followers from broadcaster service first
+        // Get broadcaster details from session (already fetched on connect)
+        const broadcasterDetails = session.broadcasterDetails;
+        
+        if (!broadcasterDetails || !broadcasterDetails.isRegistered) {
+            bot.sendMessage(chatId, '⚠️ You are not registered as a broadcaster yet. Use /register to get started!');
+            return;
+        }
+        
+        // Get followers from broadcaster service (MongoDB)
         try {
             const response = await axios.get(
                 `${BROADCASTER_SERVICE_URL}/followers/${session.wallet.address}/count`
             );
             
-            const count = response.data.count;
-            
-            // Get broadcaster info from contract
-            const registryAbi = require('../hardhat/artifacts/contracts/BroadcasterRegistry.sol/BroadcasterRegistry.json').abi;
-            const registry = new ethers.Contract(CONTRACTS.BroadcasterRegistry, registryAbi, provider);
-            const broadcasterInfo = await registry.broadcasters(session.wallet.address);
-            
-            if (!broadcasterInfo.isRegistered) {
-                bot.sendMessage(chatId, '⚠️ You are not registered as a broadcaster yet. Use /register to get started!');
-                return;
-            }
+            const count = response.data.count || 0;
             
             const followersMsg = `
 👥 *Follower Information*
 
-*Broadcaster Name:* ${broadcasterInfo.name}
+*Broadcaster Name:* ${broadcasterDetails.name}
 *Total Followers:* ${count}
-*Registered:* ${broadcasterInfo.isRegistered ? '✅' : '❌'}
-*Verified:* ${broadcasterInfo.isVerified ? '✅' : '❌'}
+*Status:* ${broadcasterDetails.isActive ? '✅ Active' : '⚠️ Inactive'}
+*Fee Per Trade:* ${broadcasterDetails.fee}%
 
-Your signals will be executed for all ${count} followers when you broadcast.
-
-*Fee Per Trade:* ${broadcasterInfo.feePercentage.toNumber() / 100}%
-*Total Trades:* ${broadcasterInfo.totalTrades.toString()}
-*Successful Trades:* ${broadcasterInfo.successfulTrades.toString()}
+${count > 0 
+    ? `Your signals will be executed for all ${count} follower${count !== 1 ? 's' : ''} when you broadcast.` 
+    : 'You don\'t have any followers yet. Share your address to attract followers!'}
 
 💡 Tip: Use /broadcast to send signals to your followers!
             `;
@@ -515,34 +574,18 @@ Your signals will be executed for all ${count} followers when you broadcast.
             bot.sendMessage(chatId, followersMsg, { parse_mode: 'Markdown' });
             
         } catch (serviceError) {
-            // Fallback: Try to get from blockchain directly
-            console.log('Broadcaster service unavailable, trying blockchain...');
+            console.error('Broadcaster service error:', serviceError.message);
             
-            const registryAbi = require('../hardhat/artifacts/contracts/BroadcasterRegistry.sol/BroadcasterRegistry.json').abi;
-            const registry = new ethers.Contract(CONTRACTS.BroadcasterRegistry, registryAbi, provider);
-            
-            const broadcasterInfo = await registry.broadcasters(session.wallet.address);
-            
-            if (!broadcasterInfo.isRegistered) {
-                bot.sendMessage(chatId, '⚠️ You are not registered as a broadcaster yet. Use /register to get started!');
-                return;
-            }
-            
+            // If service is unavailable, show what we know from session
             const followersMsg = `
 👥 *Follower Information*
 
-*Broadcaster Name:* ${broadcasterInfo.name}
-*Total Followers:* ${broadcasterInfo.followerCount.toString()}
-*Registered:* ${broadcasterInfo.isRegistered ? '✅' : '❌'}
-*Verified:* ${broadcasterInfo.isVerified ? '✅' : '❌'}
+*Broadcaster Name:* ${broadcasterDetails.name}
+*Total Followers:* Unable to fetch (service offline)
+*Status:* ${broadcasterDetails.isActive ? '✅ Active' : '⚠️ Inactive'}
+*Fee Per Trade:* ${broadcasterDetails.fee}%
 
-Your signals will be executed for all ${broadcasterInfo.followerCount.toString()} followers when you broadcast.
-
-*Fee Per Trade:* ${broadcasterInfo.feePercentage.toNumber() / 100}%
-*Total Trades:* ${broadcasterInfo.totalTrades.toString()}
-*Successful Trades:* ${broadcasterInfo.successfulTrades.toString()}
-
-⚠️ Note: Broadcaster service is offline. Follower count from blockchain.
+⚠️ Note: Broadcaster service is temporarily unavailable.
 💡 Tip: Use /broadcast to send signals to your followers!
             `;
             
@@ -552,30 +595,7 @@ Your signals will be executed for all ${broadcasterInfo.followerCount.toString()
     } catch (error) {
         console.error('Error fetching followers:', error);
         
-        let errorMsg = '❌ *Error fetching follower information*\n\n';
-        
-        if (error.code === 'CALL_EXCEPTION') {
-            errorMsg += `*Issue:* The smart contract call failed.\n\n`;
-            errorMsg += `*Possible causes:*\n`;
-            errorMsg += `• The BroadcasterRegistry contract may not be properly deployed\n`;
-            errorMsg += `• The RPC endpoint may be experiencing issues\n`;
-            errorMsg += `• You may not be registered as a broadcaster\n\n`;
-            errorMsg += `*Suggested actions:*\n`;
-            errorMsg += `1. Try again in a few moments\n`;
-            errorMsg += `2. Check if you're registered with /register\n`;
-            errorMsg += `3. Contact admin if the issue persists\n\n`;
-            errorMsg += `*Contract:* \`${CONTRACTS.BroadcasterRegistry}\`\n`;
-            errorMsg += `*Your Address:* \`${session.wallet.address}\``;
-        } else if (error.code === 'SERVER_ERROR') {
-            errorMsg += `*Issue:* The Arcology RPC server returned an error.\n\n`;
-            errorMsg += `The RPC endpoint may be down or experiencing issues. Please try again later.\n\n`;
-            errorMsg += `*RPC URL:* ${RPC_URL}`;
-        } else {
-            errorMsg += `*Error:* ${error.message}\n`;
-            errorMsg += `*Code:* ${error.code || 'UNKNOWN'}`;
-        }
-        
-        bot.sendMessage(chatId, errorMsg, { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, `❌ Error fetching follower information.\n\nPlease try again or contact support if the issue persists.`);
     }
 });
 
@@ -734,6 +754,48 @@ bot.on('callback_query', async (query) => {
     const data = query.data;
     const session = getSession(chatId);
     
+    // Handle confirm_signal callback
+    if (data.startsWith('confirm_signal_')) {
+        const amount = parseFloat(data.replace('confirm_signal_', ''));
+        const signalType = session.signalType;
+        
+        bot.answerCallbackQuery(query.id, { text: 'Broadcasting signal...' });
+        
+        try {
+            bot.sendMessage(chatId, '📡 Broadcasting signal to relayer...');
+            
+            const RELAYER_URL = process.env.RELAYER_URL || 'http://localhost:3000';
+            const direction = signalType === 'BUY' ? 'BUY_ETH' : 'SELL_ETH';
+            
+            const response = await axios.post(`${RELAYER_URL}/broadcast-trade`, {
+                broadcasterAddress: session.wallet.address,
+                direction: direction,
+                ethPrice: 3000 // Default ETH price
+            });
+            
+            const successMsg = `
+✅ *Signal Broadcast Successful!*
+
+*Type:* ${signalType}
+*Direction:* ${direction}
+*Followers Executed:* ${response.data.followersExecuted || 0}
+
+${response.data.l1TxHash ? `*L1 Transaction:* \`${response.data.l1TxHash}\`` : ''}
+${response.data.gasUsed ? `*Gas Used:* ${response.data.gasUsed}` : ''}
+
+Your signal has been executed!
+            `;
+            
+            bot.sendMessage(chatId, successMsg, { parse_mode: 'Markdown' });
+            
+        } catch (error) {
+            console.error('Broadcast error:', error);
+            bot.sendMessage(chatId, `❌ Broadcast failed: ${error.response?.data?.error || error.message}`);
+        }
+        
+        return;
+    }
+    
     if (data.startsWith('signal_')) {
         if (data === 'signal_cancel') {
             bot.answerCallbackQuery(query.id, { text: 'Cancelled' });
@@ -785,25 +847,54 @@ bot.on('message', async (msg) => {
             const wallet = new ethers.Wallet(privateKey, provider);
             const balance = await wallet.getBalance();
             
-            setSession(chatId, { 
-                wallet: wallet,
-                awaitingPrivateKey: false 
-            });
-            
             // Delete the message with private key for security
             bot.deleteMessage(chatId, msg.message_id);
             
-            const successMsg = `
+            // Check if we already have broadcaster details in session (restored from file)
+            // Otherwise, try to fetch (will return not registered on Arcology)
+            let broadcasterDetails = session.broadcasterDetails;
+            if (!broadcasterDetails) {
+                broadcasterDetails = await fetchBroadcasterDetails(wallet);
+            }
+            
+            setSession(chatId, { 
+                wallet: wallet,
+                awaitingPrivateKey: false,
+                broadcasterDetails: broadcasterDetails
+            });
+            
+            let successMsg = `
 ✅ *Wallet Connected!*
 
 *Address:* \`${wallet.address}\`
 *Balance:* ${ethers.utils.formatEther(balance)} ARC
+`;
+            
+            if (broadcasterDetails.isRegistered) {
+                successMsg += `
+*Status:* ✅ Registered Broadcaster
+
+*Your Details:*
+📝 Name: ${broadcasterDetails.name}
+💰 Fee: ${broadcasterDetails.fee}%
+${broadcasterDetails.isActive ? '✅ Active' : '⚠️ Inactive'}
+
+You can now:
+• Post signals: /broadcast
+• Check your stats: /stats
+• View followers: /followers
+`;
+            } else {
+                successMsg += `
+*Status:* ⚠️ Not Registered
 
 You can now:
 • Register as broadcaster: /register
 • Check your stats: /stats
-• Post signals: /broadcast
-
+`;
+            }
+            
+            successMsg += `
 ⚠️ Your private key is stored in memory only.
             `;
             
@@ -841,7 +932,32 @@ You can now:
             const tx = await registry.registerBroadcaster(name, fee * 100); // Convert to basis points
             const receipt = await tx.wait();
             
-            setSession(chatId, { awaitingRegistration: false });
+            // Save broadcaster details to MongoDB via broadcaster-service
+            try {
+                await axios.post(`${BROADCASTER_SERVICE_URL}/broadcaster/register`, {
+                    address: session.wallet.address,
+                    name: name,
+                    feePercentage: fee,
+                    transactionHash: receipt.transactionHash,
+                    blockNumber: receipt.blockNumber
+                });
+                console.log(`✅ Broadcaster registered in MongoDB: ${session.wallet.address}`);
+            } catch (dbError) {
+                console.error('⚠️ Failed to save to MongoDB:', dbError.message);
+            }
+            
+            // Update session with new broadcaster details
+            const broadcasterDetails = {
+                isRegistered: true,
+                name: name,
+                fee: fee,
+                isActive: true
+            };
+            
+            setSession(chatId, { 
+                awaitingRegistration: false,
+                broadcasterDetails: broadcasterDetails
+            });
             
             const successMsg = `
 ✅ *Registration Successful!*

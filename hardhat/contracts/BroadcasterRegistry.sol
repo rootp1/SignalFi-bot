@@ -47,6 +47,7 @@ contract BroadcasterRegistry is AccessControl {
     );
     event BroadcasterVerified(address indexed broadcaster, uint256 timestamp);
     event BroadcasterUnverified(address indexed broadcaster, uint256 timestamp);
+    event BroadcasterDeregistered(address indexed broadcaster, uint256 timestamp);
     event FeeUpdated(address indexed broadcaster, uint256 oldFee, uint256 newFee);
     event FollowerAdded(address indexed user, address indexed broadcaster, uint256 timestamp);
     event FollowerRemoved(address indexed user, address indexed broadcaster, uint256 timestamp);
@@ -114,6 +115,25 @@ contract BroadcasterRegistry is AccessControl {
         
         broadcasters[broadcaster].isVerified = false;
         emit BroadcasterUnverified(broadcaster, block.timestamp);
+    }
+    
+    /**
+     * @notice Deregister a broadcaster
+     * @dev Broadcaster can deregister themselves, or admin can deregister anyone
+     * @param broadcaster Address to deregister
+     */
+    function deregisterBroadcaster(address broadcaster) external {
+        require(
+            msg.sender == broadcaster || hasRole(ADMIN_ROLE, msg.sender),
+            "Not authorized: only broadcaster or admin"
+        );
+        require(broadcasters[broadcaster].isRegistered, "Not registered");
+        
+        // Mark as not registered (keeps historical data)
+        broadcasters[broadcaster].isRegistered = false;
+        broadcasters[broadcaster].isVerified = false;
+        
+        emit BroadcasterDeregistered(broadcaster, block.timestamp);
     }
     
     /**
