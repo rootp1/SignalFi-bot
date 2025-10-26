@@ -1,0 +1,19 @@
+{
+  "name": "pyusd-broadcaster-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for PyUSDCopyBot broadcasters to post trade signals",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "nodemon bot.js"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.64.0",
+    "ethers": "^5.7.2",
+    "dotenv": "^16.3.1",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

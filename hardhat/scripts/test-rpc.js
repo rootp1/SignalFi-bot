@@ -3,7 +3,7 @@ const { ethers } = require("ethers");
 async function testRPC() {
   console.log("\n🔍 Testing Arcology RPC and Contracts...\n");
 
-  const RPC_URL = "https://yttric-socorro-maniacally.ngrok-free.dev";
+  const RPC_URL = "https://achievement-acts-content-guys.trycloudflare.com";
   const USDC_ADDRESS = "0x9d811801f7154B35AE54C75C4EB16e265D9a382C";
   const SETTLEMENT_ADDRESS = "0xD92536118A234E7f5a9388Ec8dB95e90F8a1130B";
 

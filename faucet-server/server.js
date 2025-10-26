@@ -7,7 +7,7 @@ app.use(cors());
 app.use(express.json());
 
 // Configuration
-const RPC_URL = 'https://yttric-socorro-maniacally.ngrok-free.dev';
+const RPC_URL = 'https://achievement-acts-content-guys.trycloudflare.com';
 const FAUCET_PRIVATE_KEY = '134aea740081ac7e0e892ff8e5d0a763ec400fcd34bae70bcfe6dae3aceeb7f0'; // Account #10 from network.json
 const CLAIM_AMOUNT = ethers.utils.parseEther('10'); // 10 ARC
 const COOLDOWN_TIME = 0; // No cooldown for testing (set to 86400 for 24h)

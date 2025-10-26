@@ -14,7 +14,7 @@ A React + Vite application for connecting to MetaMask and depositing USDC tokens
 
 - **Network Name**: Arcology Devnet
 - **Chain ID**: 118 (0x76)
-- **RPC URL**: https://yttric-socorro-maniacally.ngrok-free.dev
+- **RPC URL**: https://achievement-acts-content-guys.trycloudflare.com
 
 ## Contract Addresses
 

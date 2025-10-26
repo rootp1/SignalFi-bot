@@ -4,8 +4,12 @@
   "description": "SignalFi Trading Bot with Arcology Network",
   "scripts": {
     "compile": "npx hardhat compile",
-    "test": "npx hardhat run test/test-settlement.js --network TestnetInfo",
-    "deploy": "npx hardhat run scripts/deploy.js --network TestnetInfo"
+    "test": "npx hardhat run test/test-settlement.js --network arcology",
+    "test:parallel": "npx hardhat test test/test-parallel-batch.js --network arcology",
+    "test:deployed": "npx hardhat run scripts/test-deployed.js --network arcology",
+    "deploy": "npx hardhat run scripts/deploy.js --network arcology",
+    "deploy:pyusd": "npx hardhat run scripts/deploy-pyusdcopybot.js --network arcology",
+    "fund:deployer": "node scripts/fund-from-faucet.js"
   },
   "keywords": [],
   "author": "",

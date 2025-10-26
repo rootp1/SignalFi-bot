@@ -209,7 +209,7 @@ const DepositUSDC = () => {
         <div className="tx-hash">
           <span>Transaction: </span>
           <a 
-            href={`https://yttric-socorro-maniacally.ngrok-free.dev/tx/${txHash}`}
+            href={`https://achievement-acts-content-guys.trycloudflare.com/tx/${txHash}`}
             target="_blank"
             rel="noopener noreferrer"
           >

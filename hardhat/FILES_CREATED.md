@@ -38,7 +38,7 @@ All production-ready files have been created and compiled successfully.
 
 2. **network.json** - Arcology network config
    - Path: `network.json`
-   - Network: TestnetInfo (https://yttric-socorro-maniacally.ngrok-free.dev)
+   - Network: TestnetInfo (https://achievement-acts-content-guys.trycloudflare.com)
 
 3. **package.json** - NPM dependencies and scripts
    - Path: `package.json`

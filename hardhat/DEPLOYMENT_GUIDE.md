@@ -52,7 +52,7 @@ npm run compile
 ## Network Configuration
 
 - **Network**: Arcology Devnet (TestnetInfo)
-- **RPC URL**: https://yttric-socorro-maniacally.ngrok-free.dev
+- **RPC URL**: https://achievement-acts-content-guys.trycloudflare.com
 - **Accounts**: Pre-configured in `network.json`
 
 ## Deployment
@@ -205,7 +205,7 @@ npx hardhat compile
 ```
 
 ### Network Connection
-Verify Arcology devnet is running at https://yttric-socorro-maniacally.ngrok-free.dev
+Verify Arcology devnet is running at https://achievement-acts-content-guys.trycloudflare.com
 
 ### Insufficient Funds
 Ensure deployer account has sufficient balance on TestnetInfo network

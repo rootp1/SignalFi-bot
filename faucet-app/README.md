@@ -1,13 +1,14 @@
-# SignalFi Faucet App
+# SignalFi PYUSD Faucet App
 
-## 🚀 Basic React App for Testing
+## 🚀 React App for PayPal USD Testing
 
-This is a simple React app that allows users to:
+This is a React app that allows users to:
 1. Add Arcology Devnet to MetaMask (one click)
-2. Mint free USDC and WETH tokens for testing
-3. View their token balances
+2. Claim free PYUSD tokens from the faucet contract (100 PYUSD every 24 hours)
+3. Mint free WETH tokens for testing
+4. View their token balances
 
-**No CSS - Pure functionality only!**
+**Features PYUSD Faucet Integration with 24-hour cooldown!**
 
 ---
 
@@ -25,17 +26,18 @@ npm install
 After deploying your contracts, update `src/config.js`:
 
 ```javascript
-export const USDC_ADDRESS = '0xYourUSDCAddress';
+export const PYUSD_ADDRESS = '0xYourPYUSDAddress';
 export const WETH_ADDRESS = '0xYourWETHAddress';
 export const AMM_ADDRESS = '0xYourAMMAddress';
+export const PYUSD_FAUCET_ADDRESS = '0xYourPYUSDFaucetAddress';
 export const SETTLEMENT_ADDRESS = '0xYourSettlementAddress';
 ```
 
 **Current addresses (from your deployment):**
-- USDC: `0xfbC451FBd7E17a1e7B18347337657c1F2c52B631`
-- WETH: `0x2249977665260A63307Cf72a4D65385cC0817CB5`
-- AMM: `0x663536Ee9E60866DC936D2D65c535e795f4582D1`
-- Settlement: `0x010e5c3c0017b8009E926c39b072831065cc7Dc2`
+- PYUSD: `0xA937A31D284b461424CC8f8D9c333a52544731fE`
+- WETH: `0xd463462DF8E5b7E986FAaa452E0Af7330B6541a7`
+- AMM: `0x48b77bd6D1a3BE0A3257c87352694b92a0E1aa96`
+- PYUSD Faucet: `0xF1CB91dE4A88856C7c451048eb28D25E5f3Bfe89`
 
 ### Step 3: Run the App
 
@@ -59,14 +61,15 @@ App will open at `http://localhost:3000`
 3. **Click "Add Arcology Network"**
    - Adds network to MetaMask (one click!)
    - Chain ID: 118
-   - RPC: https://yttric-socorro-maniacally.ngrok-free.dev
+   - RPC: https://achievement-acts-content-guys.trycloudflare.com
 
 4. **Click "Switch to Arcology"**
    - Switches to the correct network
 
-5. **Click "Get 100 USDC"**
-   - Mints 100 USDC to your wallet
-   - No restrictions, unlimited minting for testing!
+5. **Click "Get 100 PYUSD"**
+   - Claims 100 PYUSD from the faucet contract
+   - Can claim once every 24 hours
+   - Uses the PyUSDFaucet.sol contract
 
 6. **Click "Get 1 WETH"**
    - Mints 1 WETH to your wallet
@@ -77,11 +80,11 @@ App will open at `http://localhost:3000`
 
 ## 💰 Gas Costs
 
-The mint function is extremely cheap:
-- **USDC mint**: ~50,000 gas (basically free)
+The claim/mint functions are extremely cheap:
+- **PYUSD claim from faucet**: ~100,000 gas (basically free)
 - **WETH mint**: ~50,000 gas (basically free)
 
-With Arcology's low gas prices, 100 USDC costs almost nothing to mint!
+With Arcology's low gas prices, claiming 100 PYUSD costs almost nothing!
 
 ---
 
@@ -91,14 +94,20 @@ With Arcology's low gas prices, 100 USDC costs almost nothing to mint!
 - Automatically adds Arcology Devnet to MetaMask
 - Includes all network details (RPC, Chain ID, etc.)
 
-✅ **Unlimited Minting**
-- No rate limits (since only you're testing)
-- Anyone can mint as much as they want
-- Perfect for testing
+✅ **PYUSD Faucet Integration**
+- Uses PyUSDFaucet.sol smart contract
+- 24-hour cooldown between claims
+- 100 PYUSD per claim
+- Displays cooldown timer
+
+✅ **Unlimited WETH Minting**
+- No rate limits for testing
+- Perfect for development
 
 ✅ **Real-Time Balance Display**
-- Shows USDC and WETH balances
-- Automatically updates after minting
+- Shows PYUSD and WETH balances
+- Automatically updates after claiming/minting
+- Displays PYUSD faucet cooldown status
 
 ✅ **Network Detection**
 - Detects if user is on correct network
@@ -133,28 +142,30 @@ await window.ethereum.request({
   params: [{
     chainId: '0x76',  // 118 in hex
     chainName: 'Arcology Devnet',
-    rpcUrls: ['https://yttric-socorro-maniacally.ngrok-free.dev']
+    rpcUrls: ['https://achievement-acts-content-guys.trycloudflare.com']
   }]
 });
 ```
 
-### Minting Tokens
+### Claiming PYUSD from Faucet
 
 ```javascript
-const usdcContract = new ethers.Contract(USDC_ADDRESS, ERC20_ABI, signer);
-await usdcContract.mint(userAddress, ethers.utils.parseUnits('100', 6));
+const faucetContract = new ethers.Contract(PYUSD_FAUCET_ADDRESS, PYUSD_FAUCET_ABI, signer);
+await faucetContract.claimPYUSD();
 ```
 
-Since `mint()` is public in MockERC20, anyone can call it!
+The PyUSDFaucet contract enforces:
+- 100 PYUSD per claim
+- 24-hour cooldown between claims
+- Prevents double claiming
 
 ---
 
 ## 🎯 Next Steps
 
-1. **Test the faucet** - Make sure minting works
+1. **Test the faucet** - Make sure claiming PYUSD works
 2. **Share with testers** - Give them the URL
-3. **Deploy settlement contract** - Let users deposit USDC
-4. **Build trading UI** - Create order book, trading interface
+3. **Build trading UI** - Create order book, trading interface with PYUSD
 
 ---
 
@@ -162,16 +173,15 @@ Since `mint()` is public in MockERC20, anyone can call it!
 
 ### For Testing Only!
 
-- **Public mint function** = anyone can mint unlimited tokens
-- **NO rate limiting** = spam possible
-- **NOT for production** = would cause infinite inflation
+- **Faucet contract** = 24-hour cooldown per address
+- **Rate limiting built-in** = prevents spam
+- **Production-ready** = uses proper faucet pattern
 
-### For Production:
+### Features:
 
-You'll need to replace with:
-- Real USDC/USDT contracts
-- Or controlled minting (only admin)
-- Or faucet contract with rate limits
+- PayPal USD (PYUSD) mock token with 6 decimals
+- Faucet contract with cooldown mechanism
+- Perfect for testnet and development
 
 ---
 

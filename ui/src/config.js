@@ -3,7 +3,7 @@ export const NETWORK_CONFIG = {
   chainId: 118,
   chainIdHex: '0x76',
   chainName: 'Arcology Devnet',
-  rpcUrl: 'https://yttric-socorro-maniacally.ngrok-free.dev',
+  rpcUrl: 'https://achievement-acts-content-guys.trycloudflare.com',
   blockExplorerUrl: '', // Add if available
   nativeCurrency: {
     name: 'ARC',
@@ -12,15 +12,24 @@ export const NETWORK_CONFIG = {
   }
 };
 
-// Contract Addresses
+// Contract Addresses - PyUSDCopyBot Deployment (2025-10-24 - $500k Liquidity)
 export const CONTRACTS = {
+  // Legacy contracts (old deployment)
   USDC: '0x9d811801f7154B35AE54C75C4EB16e265D9a382C',
-  WETH: '0x6a52E52503915f67Cb845bf41878AcC322984f51',
-  AMM: '0x1C13661f27df56eFdfD388AaAde884C2c06fC1C1',
-  SETTLEMENT: '0xD92536118A234E7f5a9388Ec8dB95e90F8a1130B'
+  SETTLEMENT: '0xD92536118A234E7f5a9388Ec8dB95e90F8a1130B',
+  
+  // New PyUSDCopyBot contracts - LATEST DEPLOYMENT
+  MockPYUSD: '0x694D208b3F6edA287128f6c80E0fA4fe1B5e8F60',
+  WETH: '0xE7D0fbDe97522D441563abA8EEaC7531f103A88d',
+  AMM: '0x309eCed01E331F3128F34932F5971E4127D2c6E6',
+  ParallelBatchExecutor: '0xAc99Da7BFE237C6C7c703C876e4ABAF927BE9FB4',
+  BroadcasterRegistry: '0x2Db0fa23d2b44FD192593D09A32663F16F70D29B',
+  PyUSDFaucet: '0x3102aEaD990606C09646AdEe5B8fDCAfF6F52B68',
+  ARCFaucet: '0x2410Aa3077b5F99d9FA6cad64703CFfD482B2023'
 };
 
 // Token Configuration
+export const PYUSD_DECIMALS = 6;  // PayPal USD uses 6 decimals
 export const USDC_DECIMALS = 6;
 export const WETH_DECIMALS = 18;
 

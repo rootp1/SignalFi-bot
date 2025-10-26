@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { NETWORK_CONFIG, USDC_ADDRESS, WETH_ADDRESS, FAUCET_SERVER_URL, ERC20_ABI } from './config';
+import { NETWORK_CONFIG, PYUSD_ADDRESS, WETH_ADDRESS, PYUSD_FAUCET_ADDRESS, FAUCET_SERVER_URL, ERC20_ABI, PYUSD_FAUCET_ABI } from './config';
+import { queryBalance, queryFaucetCooldown } from './arcologyHelpers';
 
 function App() {
   const [account, setAccount] = useState('');
-  const [usdcBalance, setUsdcBalance] = useState('0');
-  const [wethBalance, setWethBalance] = useState('0');
+  const [pyusdBalance, setPyusdBalance] = useState('0');
   const [arcBalance, setArcBalance] = useState('0');
   const [isCorrectNetwork, setIsCorrectNetwork] = useState(false);
   const [status, setStatus] = useState('');
   const [hasClaimedARC, setHasClaimedARC] = useState(false);
+  const [isLoadingBalances, setIsLoadingBalances] = useState(false);
 
   // Check if MetaMask is installed
   const isMetaMaskInstalled = () => {
@@ -24,14 +25,30 @@ function App() {
     }
 
     try {
+      setStatus('Connecting to wallet...');
+      
+      // Request account access
       const accounts = await window.ethereum.request({
         method: 'eth_requestAccounts'
       });
-      setAccount(accounts[0]);
-      setStatus('Wallet connected!');
-      checkNetwork();
+      
+      if (accounts && accounts.length > 0) {
+        setAccount(accounts[0]);
+        setStatus('Wallet connected!');
+        await checkNetwork();
+      } else {
+        setStatus('No accounts found. Please unlock MetaMask.');
+      }
     } catch (error) {
-      setStatus('Error connecting wallet: ' + error.message);
+      console.error('Connection error:', error);
+      
+      if (error.code === 4001) {
+        setStatus('Connection rejected by user');
+      } else if (error.code === -32002) {
+        setStatus('Connection request already pending. Please check MetaMask.');
+      } else {
+        setStatus('Error connecting wallet: ' + error.message);
+      }
     }
   };
 
@@ -102,17 +119,25 @@ function App() {
       return;
     }
 
-    // Check if already claimed from localStorage
-    const claimKey = `arc_claimed_${account.toLowerCase()}`;
-    if (localStorage.getItem(claimKey)) {
-      setStatus('You have already claimed ARC for this account!');
+    // Check if balance is already > 0.5 ARC (threshold to allow re-claims if balance is very low)
+    if (parseFloat(arcBalance) > 0.5) {
+      setStatus('You already have ARC! Balance: ' + arcBalance + ' ARC');
+      // Don't set as claimed if they just have balance, only if they actually claimed from faucet
       return;
     }
 
-    // Check if balance is already > 0
-    if (parseFloat(arcBalance) > 0) {
-      setStatus('You already have ARC! Balance: ' + arcBalance + ' ARC');
-      return;
+    // Check if already claimed from localStorage (prevent multiple claims in 24h)
+    const claimKey = `arc_claimed_${account.toLowerCase()}`;
+    const lastClaimTime = localStorage.getItem(claimKey);
+    
+    if (lastClaimTime) {
+      const timeSinceLastClaim = Date.now() - parseInt(lastClaimTime);
+      const hoursRemaining = 24 - Math.floor(timeSinceLastClaim / (1000 * 60 * 60));
+      
+      if (hoursRemaining > 0) {
+        setStatus(`Please wait ${hoursRemaining} hours before claiming again!`);
+        return;
+      }
     }
 
     try {
@@ -133,15 +158,18 @@ function App() {
         throw new Error(data.error || data.message || 'Faucet request failed');
       }
 
-      // Mark as claimed in localStorage
-      localStorage.setItem(claimKey, 'true');
+      // Mark claim time in localStorage (store timestamp instead of boolean)
+      localStorage.setItem(claimKey, Date.now().toString());
       setHasClaimedARC(true);
 
       setStatus(`Successfully claimed 10 ARC! TX: ${data.txHash.slice(0, 10)}...`);
 
       // Wait a moment then update balance
       setTimeout(() => {
-        loadBalances();
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        provider.getBalance(account).then(arcBal => {
+          setArcBalance(ethers.utils.formatEther(arcBal));
+        });
       }, 2000);
 
     } catch (error) {
@@ -169,8 +197,8 @@ function App() {
     }
   };
 
-  // Mint USDC
-  const mintUSDC = async () => {
+  // Claim PYUSD from faucet (unlimited, no cooldown)
+  const claimPYUSD = async () => {
     if (!account) {
       setStatus('Please connect wallet first!');
       return;
@@ -182,131 +210,82 @@ function App() {
     }
 
     try {
-      setStatus('Minting 100 USDC...');
+      setStatus('Claiming 100 PYUSD from faucet...');
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = provider.getSigner();
-      const usdcContract = new ethers.Contract(USDC_ADDRESS, ERC20_ABI, signer);
+      const faucetContract = new ethers.Contract(PYUSD_FAUCET_ADDRESS, PYUSD_FAUCET_ABI, signer);
 
-      // Mint 100 USDC (6 decimals) with explicit gas limit
-      const tx = await usdcContract.mint(
-        account,
-        ethers.utils.parseUnits('100', 6),
-        {
-          gasLimit: 100000  // Set explicit gas limit
-        }
-      );
+      // Claim PYUSD with explicit gas limit
+      const tx = await faucetContract.claimPYUSD({
+        gasLimit: 200000
+      });
       setStatus(`Transaction sent: ${tx.hash.slice(0, 10)}... Waiting for confirmation...`);
 
       const receipt = await tx.wait();
-      console.log('Mint receipt:', receipt);
+      console.log('Claim receipt:', receipt);
 
       if (receipt.status === 1) {
-        setStatus('Successfully minted 100 USDC! Adding token to MetaMask...');
+        setStatus('Successfully claimed 100 PYUSD! Adding token to MetaMask...');
 
         // Automatically add token to MetaMask
-        await addTokenToMetaMask(USDC_ADDRESS, 'USDC', 6);
+        await addTokenToMetaMask(PYUSD_ADDRESS, 'PYUSD', 6);
 
-        // Update balance immediately and again after a delay
-        await loadBalances();
+        // Update balance
+        await loadBalances(true); // Force refresh
 
         setTimeout(async () => {
-          await loadBalances();
-          setStatus('100 USDC minted successfully! Check your wallet or click "Refresh Balances"');
+          await loadBalances(true); // Force refresh
+          setStatus('100 PYUSD claimed successfully! Check your wallet or click "Refresh Tokens"');
         }, 2000);
       } else {
         setStatus('Transaction failed!');
       }
     } catch (error) {
-      setStatus('Error minting USDC: ' + error.message);
+      setStatus('Error claiming PYUSD: ' + error.message);
       console.error('Full error:', error);
     }
   };
 
-  // Mint WETH
-  const mintWETH = async () => {
-    if (!account) {
-      setStatus('Please connect wallet first!');
-      return;
-    }
-
-    if (!isCorrectNetwork) {
-      setStatus('Please switch to Arcology Devnet first!');
-      return;
-    }
-
-    try {
-      setStatus('Minting 1 WETH...');
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const signer = provider.getSigner();
-      const wethContract = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, signer);
-
-      // Mint 1 WETH (18 decimals) with explicit gas limit
-      const tx = await wethContract.mint(
-        account,
-        ethers.utils.parseEther('1'),
-        {
-          gasLimit: 100000  // Set explicit gas limit
-        }
-      );
-      setStatus(`Transaction sent: ${tx.hash.slice(0, 10)}... Waiting for confirmation...`);
-
-      const receipt = await tx.wait();
-      console.log('Mint receipt:', receipt);
-
-      if (receipt.status === 1) {
-        setStatus('Successfully minted 1 WETH! Adding token to MetaMask...');
-
-        // Automatically add token to MetaMask
-        await addTokenToMetaMask(WETH_ADDRESS, 'WETH', 18);
-
-        // Update balance immediately and again after a delay
-        await loadBalances();
-
-        setTimeout(async () => {
-          await loadBalances();
-          setStatus('1 WETH minted successfully! Check your wallet or click "Refresh Balances"');
-        }, 2000);
-      } else {
-        setStatus('Transaction failed!');
-      }
-    } catch (error) {
-      setStatus('Error minting WETH: ' + error.message);
-      console.error('Full error:', error);
-    }
-  };
-
-  // Load token balances
-  const loadBalances = async () => {
+  // Load token balances (Arcology pattern)
+  const loadBalances = async (forceRefresh = false) => {
     if (!account || !isCorrectNetwork) return;
+    if (isLoadingBalances && !forceRefresh) return; // Prevent multiple simultaneous calls
 
     try {
+      setIsLoadingBalances(true);
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = provider.getSigner();
 
-      // Get ARC balance
+      // Get ARC balance (native currency - works normally, no transaction needed)
       const arcBal = await provider.getBalance(account);
       setArcBalance(ethers.utils.formatEther(arcBal));
       console.log('ARC Balance:', ethers.utils.formatEther(arcBal));
 
-      // IMPORTANT: Arcology RPC requires 'from' address in eth_call
-      // Use signer instead of provider to automatically include it
-      const usdcContract = new ethers.Contract(USDC_ADDRESS, ERC20_ABI, signer);
-      const wethContract = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, signer);
+      // For Arcology tokens, querying requires transactions (MetaMask prompts!)
+      // Only query if forced or if we have 0 balance (initial load)
+      if (forceRefresh || pyusdBalance === '0') {
+        setStatus('Querying PYUSD balance (requires signature)...');
+        
+        const pyusdContract = new ethers.Contract(PYUSD_ADDRESS, ERC20_ABI, signer);
 
-      const usdcBal = await usdcContract.balanceOf(account);
-      const wethBal = await wethContract.balanceOf(account);
+        console.log('Querying PYUSD balance...');
+        const pyusdBal = await queryBalance(pyusdContract, account).catch(err => {
+          console.warn('PYUSD balance query failed:', err.message);
+          return ethers.BigNumber.from(0);
+        });
 
-      const formattedUSDC = ethers.utils.formatUnits(usdcBal, 6);
-      const formattedWETH = ethers.utils.formatEther(wethBal);
-
-      console.log('USDC Balance:', formattedUSDC, 'Raw:', usdcBal.toString());
-      console.log('WETH Balance:', formattedWETH, 'Raw:', wethBal.toString());
-
-      setUsdcBalance(formattedUSDC);
-      setWethBalance(formattedWETH);
+        const formattedPYUSD = ethers.utils.formatUnits(pyusdBal, 6);
+        console.log('PYUSD Balance:', formattedPYUSD, 'Raw:', pyusdBal.toString());
+        setPyusdBalance(formattedPYUSD);
+      }
+      
+      setStatus('Balances loaded!');
+      setTimeout(() => setStatus(''), 2000);
     } catch (error) {
       console.error('Error loading balances:', error);
       setStatus('Error loading balances: ' + error.message);
+    } finally {
+      setIsLoadingBalances(false);
     }
   };
 
@@ -326,18 +305,32 @@ function App() {
   // Load balances when account or network changes
   useEffect(() => {
     if (account && isCorrectNetwork) {
-      loadBalances();
+      // Only auto-load ARC balance (no MetaMask popup)
+      // Token balances require user to click "Refresh" button
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      provider.getBalance(account).then(arcBal => {
+        setArcBalance(ethers.utils.formatEther(arcBal));
+      });
     }
   }, [account, isCorrectNetwork]);
 
-  // Check claim status when account changes
+  // Check claim status when account or balance changes
   useEffect(() => {
     if (account) {
       const claimKey = `arc_claimed_${account.toLowerCase()}`;
-      const hasClaimed = localStorage.getItem(claimKey) === 'true';
-      setHasClaimedARC(hasClaimed);
+      const lastClaimTime = localStorage.getItem(claimKey);
+      
+      if (lastClaimTime) {
+        const timeSinceLastClaim = Date.now() - parseInt(lastClaimTime);
+        const hoursRemaining = 24 - Math.floor(timeSinceLastClaim / (1000 * 60 * 60));
+        
+        // Mark as claimed only if within 24 hour cooldown period
+        setHasClaimedARC(hoursRemaining > 0);
+      } else {
+        setHasClaimedARC(false);
+      }
     }
-  }, [account]);
+  }, [account, arcBalance]); // Re-check when account or balance changes
 
   return (
     <div className="relative">
@@ -350,8 +343,8 @@ function App() {
       <main className="faucet-shell relative z-10">
         <header className="flex items-center justify-between mb-6">
           <div className="crazy-header">
-            <h1 className="neon-title">SignalFi</h1>
-            <div className="mt-1 text-xs neon-pink">Cyberpunk Faucet • Hackathon Edition</div>
+            <h1 className="neon-title">SignalFi PYUSD</h1>
+            <div className="mt-1 text-xs neon-pink">PayPal USD Faucet • Hackathon Edition</div>
           </div>
           <div className="space-x-3">
             {!account ? (
@@ -389,10 +382,16 @@ function App() {
             {account && isCorrectNetwork ? (
               <div className="mt-3 space-y-2">
                 <div className="flex items-center justify-between"><span className="text-sm">ARC</span><span className="neon-green font-mono">{arcBalance}</span></div>
-                <div className="flex items-center justify-between"><span className="text-sm">USDC</span><span className="neon-pink font-mono">{usdcBalance}</span></div>
-                <div className="flex items-center justify-between"><span className="text-sm">WETH</span><span className="neon-green font-mono">{wethBalance}</span></div>
-                <div className="mt-3">
-                  <button className="glass-btn" onClick={loadBalances}>Refresh</button>
+                <div className="flex items-center justify-between"><span className="text-sm">PYUSD</span><span className="neon-pink font-mono">{pyusdBalance}</span></div>
+                <div className="mt-3 space-x-2">
+                  <button 
+                    className="glass-btn" 
+                    onClick={() => loadBalances(true)}
+                    disabled={isLoadingBalances}
+                  >
+                    {isLoadingBalances ? 'Loading...' : 'Refresh PYUSD'}
+                  </button>
+                  <span className="text-xs text-gray-400">(requires signature)</span>
                 </div>
               </div>
             ) : (
@@ -422,14 +421,19 @@ function App() {
             <button className="neon-btn" onClick={claimARC} disabled={!account || !isCorrectNetwork || hasClaimedARC || parseFloat(arcBalance) > 0}>
               {hasClaimedARC || parseFloat(arcBalance) > 0 ? '✓ Already Claimed' : 'Get 10 ARC'}
             </button>
-            <button className="neon-btn" onClick={mintUSDC} disabled={!account || !isCorrectNetwork}>Get 100 USDC</button>
-            <button className="neon-btn" onClick={mintWETH} disabled={!account || !isCorrectNetwork}>Get 1 WETH</button>
+            <button 
+              className="neon-btn" 
+              onClick={claimPYUSD} 
+              disabled={!account || !isCorrectNetwork}
+            >
+              Get 100 PYUSD
+            </button>
           </div>
         </section>
 
         <footer className="mt-6 text-sm neon-pink">
-          <div>USDC: {USDC_ADDRESS}</div>
-          <div>WETH: {WETH_ADDRESS}</div>
+          <div>PYUSD: {PYUSD_ADDRESS}</div>
+          <div>PYUSD Faucet: {PYUSD_FAUCET_ADDRESS}</div>
         </footer>
       </main>
     </div>

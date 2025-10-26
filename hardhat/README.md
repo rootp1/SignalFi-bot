@@ -77,7 +77,7 @@ hardhat/
 ## 🌐 Network Configuration
 
 - **Network**: Arcology TestnetInfo
-- **RPC**: https://yttric-socorro-maniacally.ngrok-free.dev
+- **RPC**: https://achievement-acts-content-guys.trycloudflare.com
 - **Accounts**: Pre-configured in network.json
 
 ---
