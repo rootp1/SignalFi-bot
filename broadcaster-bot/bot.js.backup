@@ -764,8 +764,51 @@ const AMM_ABI = [
  * Execute broadcaster's trade directly on L1
  */
 async function executeBroadcasterTradeOnL1(wallet, signalType, amount) {
-    bot.sendMessage(`EXECUTED TRADE ON L1, AFTER batching on l2`);
-
+    console.log(`🔥 Executing broadcaster L1 trade: ${signalType} ${amount}`);
+    
+    const isBuy = signalType === 'BUY';
+    const tokenIn = isBuy ? CONTRACTS.ArcologyPYUSD : CONTRACTS.ArcologyWETH;
+    const tokenOut = isBuy ? CONTRACTS.ArcologyWETH : CONTRACTS.ArcologyPYUSD;
+    
+    // Convert amount to wei/smallest unit
+    const amountInWei = ethers.utils.parseUnits(amount.toString(), isBuy ? 6 : 18); // PYUSD has 6 decimals, WETH has 18
+    
+    // Create contract instances
+    const tokenInContract = new ethers.Contract(tokenIn, ERC20_ABI, wallet);
+    const ammContract = new ethers.Contract(CONTRACTS.AMM, AMM_ABI, wallet);
+    
+    console.log(`📊 Trade details:
+    - Type: ${signalType}
+    - Token In: ${tokenIn}
+    - Token Out: ${tokenOut}
+    - Amount: ${amountInWei.toString()}
+    `);
+    
+    // Step 1: Approve AMM to spend tokens (always approve, Arcology contracts work differently)
+    console.log('📝 Approving AMM to spend tokens...');
+    const approveTx = await tokenInContract.approve(CONTRACTS.AMM, amountInWei, {
+        gasLimit: 300000 // Explicit gas limit for Arcology
+    });
+    await approveTx.wait();
+    console.log(`✅ Approval confirmed: ${approveTx.hash}`);
+    
+    // Step 2: Execute swap on L1
+    console.log('🔄 Executing swap on AMM...');
+    const swapTx = await ammContract.swap(
+        tokenIn,
+        tokenOut,
+        amountInWei,
+        wallet.address,
+        {
+            gasLimit: 500000 // Explicit gas limit for Arcology
+        }
+    );
+    
+    console.log(`⏳ Waiting for swap confirmation...`);
+    const receipt = await swapTx.wait();
+    console.log(`✅ Swap confirmed! Tx: ${swapTx.hash}`);
+    
+    return swapTx.hash;
 }
 
 // Handle callback queries
@@ -820,6 +863,7 @@ Signal executed successfully!
             
         } catch (error) {
             console.error('Broadcast error:', error);
+            bot.sendMessage(chatId, `❌ Broadcast failed: ${error.response?.data?.error || error.message}`);
         }
         
         return;
@@ -953,12 +997,29 @@ You can now:
                 return;
             }
             
-            bot.sendMessage(chatId, '📝 Registering...');
+            bot.sendMessage(chatId, '📝 Registering on-chain...');
             
-            // Wait 2 seconds to simulate processing
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            const registryAbi = require('../hardhat/artifacts/contracts/BroadcasterRegistry.sol/BroadcasterRegistry.json').abi;
+            const registry = new ethers.Contract(CONTRACTS.BroadcasterRegistry, registryAbi, session.wallet);
             
-            // HARDCODED: Skip blockchain registration, just save to session
+            const tx = await registry.registerBroadcaster(name, fee * 100); // Convert to basis points
+            const receipt = await tx.wait();
+            
+            // Save broadcaster details to MongoDB via broadcaster-service
+            try {
+                await axios.post(`${BROADCASTER_SERVICE_URL}/broadcaster/register`, {
+                    address: session.wallet.address,
+                    name: name,
+                    feePercentage: fee,
+                    transactionHash: receipt.transactionHash,
+                    blockNumber: receipt.blockNumber
+                });
+                console.log(`✅ Broadcaster registered in MongoDB: ${session.wallet.address}`);
+            } catch (dbError) {
+                console.error('⚠️ Failed to save to MongoDB:', dbError.message);
+            }
+            
+            // Update session with new broadcaster details
             const broadcasterDetails = {
                 isRegistered: true,
                 name: name,
@@ -971,14 +1032,12 @@ You can now:
                 broadcasterDetails: broadcasterDetails
             });
             
-            const dummyTxHash = '0x' + Math.random().toString(16).substr(2, 64);
-            
             const successMsg = `
-✅ *Registered Successfully!*
+✅ *Registration Successful!*
 
 *Name:* ${name}
 *Fee:* ${fee}%
-*Status:* Active
+*Transaction:* \`${receipt.transactionHash}\`
 
 You can now:
 • Post signals: /broadcast
@@ -1007,50 +1066,34 @@ You can now:
             
             const signalType = session.signalType;
             
-            // HARDCODED: Auto-confirm and broadcast immediately
-            bot.sendMessage(chatId, '📡 Broadcasting signal...');
-            setSession(chatId, { awaitingSignalDetails: false });
-            
-            try {
-                // Step 1: Execute broadcaster's own trade on L1 FIRST
-                bot.sendMessage(chatId, '⚡ Executing your trade on L1...');
-                
-                const broadcasterTxHash = await executeBroadcasterTradeOnL1(session.wallet, signalType, amount);
-                
-                bot.sendMessage(chatId, `✅ Your L1 trade executed!\n*Tx:* \`${broadcasterTxHash}\``, { parse_mode: 'Markdown' });
-                
-                // Step 2: Now broadcast signal to followers via relayer
-                bot.sendMessage(chatId, '📡 Broadcasting signal to followers...');
-                
-                const RELAYER_URL = process.env.RELAYER_URL || 'http://localhost:3000';
-                const direction = signalType === 'BUY' ? 'BUY_ETH' : 'SELL_ETH';
-                
-                const response = await axios.post(`${RELAYER_URL}/broadcast-trade`, {
-                    broadcasterAddress: session.wallet.address,
-                    direction: direction,
-                    ethPrice: 3000, // Default ETH price
-                    broadcasterTxHash: broadcasterTxHash // Include broadcaster's tx hash
-                });
-                
-                const successMsg = `
-✅ *Signal Broadcast Complete!*
+            const confirmMsg = `
+📡 *Confirm Signal*
 
 *Type:* ${signalType}
-*Direction:* ${direction}
+*Amount:* ${amount} ${signalType === 'BUY' ? 'PYUSD' : 'WETH'}
 
-*Your Trade (L1):* \`${broadcasterTxHash}\`
-*Followers Executed:* ${response.data.followersExecuted || 0}
+*Action:* ${signalType === 'BUY' 
+    ? `Buy WETH with ${amount} PYUSD` 
+    : `Sell ${amount} WETH for PYUSD`}
 
-${response.data.followersTxHash ? `*Followers Tx:* \`${response.data.followersTxHash}\`` : ''}
+This signal will be sent to ALL your followers.
 
-Signal executed successfully!
-                `;
-                
-                bot.sendMessage(chatId, successMsg, { parse_mode: 'Markdown' });
-                
-            } catch (error) {
-                console.error('Broadcast error:', error);
-            }
+Confirm?
+            `;
+            
+            const keyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '✅ Confirm & Broadcast', callback_data: `confirm_signal_${amount}` },
+                            { text: '❌ Cancel', callback_data: 'signal_cancel' }
+                        ]
+                    ]
+                }
+            };
+            
+            bot.sendMessage(chatId, confirmMsg, { parse_mode: 'Markdown', ...keyboard });
+            setSession(chatId, { awaitingSignalDetails: false, signalAmount: amount });
             
         } catch (error) {
             bot.sendMessage(chatId, `❌ Error: ${error.message}`);

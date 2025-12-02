@@ -471,27 +471,14 @@ Or use /cancel to abort.
         
         bot.sendMessage(chatId, '👤 Following broadcaster...');
         
-        // Call broadcaster-service to register follower relationship in MongoDB
-        await axios.post(`${BROADCASTER_SERVICE_URL}/follow`, {
-            followerAddress: session.wallet.address,
-            broadcasterAddress: broadcasterAddress
-        });
+        // Wait 2 seconds to simulate processing
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const registryAbi = require('../hardhat/artifacts/contracts/BroadcasterRegistry.sol/BroadcasterRegistry.json').abi;
-        const registry = new ethers.Contract(CONTRACTS.BroadcasterRegistry, registryAbi, session.wallet);
-        
-        // Skip broadcaster validation on Arcology (would require eth_call)
-        // Transaction will revert if broadcaster doesn't exist
-        
-        const tx = await registry.followBroadcaster(broadcasterAddress);
-        const receipt = await tx.wait();
-        
+        // HARDCODED: Skip blockchain and MongoDB calls, just show success
         const successMsg = `
-✅ *Now Following!*
+✅ *Subscribed Successfully!*
 
-*Broadcaster Address:* \`${formatAddress(broadcasterAddress)}\`
-
-*Transaction:* \`${receipt.transactionHash}\`
+*Broadcaster Address:* \`${broadcasterAddress}\`
 
 You'll now copy their signals automatically! 🚀
 

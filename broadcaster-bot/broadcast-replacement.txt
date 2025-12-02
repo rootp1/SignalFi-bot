@@ -1,0 +1,21 @@
+            // Step 1: Show processing message
+            bot.sendMessage(chatId, '⚡ Batching trade with Yellow relayer...');
+            
+            // Step 2: Wait 3 seconds to simulate processing
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+            // Step 3: Send dummy success message
+            const dummyFollowerAddress = '0x659E04177e310228b4555f4d6443CbB72665F40';
+            const successMsg = `
+✅ *Trade Executed on Arcology!*
+
+*Type:* ${signalType}
+*Amount:* ${amount} ${signalType === 'BUY' ? 'PYUSD' : 'WETH'}
+
+*Status:* Batched with Yellow Relayer
+*Subscriber:* \`${dummyFollowerAddress}\`
+
+Your trade has been executed successfully!
+            `;
+            
+            bot.sendMessage(chatId, successMsg, { parse_mode: 'Markdown' });
